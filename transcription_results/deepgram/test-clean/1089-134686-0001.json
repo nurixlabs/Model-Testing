@@ -1,0 +1,7 @@
+{
+  "text": "",
+  "error": "'ListenRESTAlternative' object has no attribute 'get'",
+  "ground_truth": "stuff it into you his belly counselled him",
+  "wer": 1.0,
+  "cer": 1.0
+}
