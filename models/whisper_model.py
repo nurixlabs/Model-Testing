@@ -1,7 +1,13 @@
+"""
+Whisper Speech-to-Text Model Implementation
+"""
 import os
+import logging
 import torch
+import gc
 from models.base_model import BaseModel
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+
 
 class WhisperModel(BaseModel):
     """Whisper model implementation using HuggingFace transformers."""
@@ -12,85 +18,111 @@ class WhisperModel(BaseModel):
         self.model = None
         self.processor = None
         self.pipe = None
-        self.model_id = config.get('model_id', 'openai/whisper-large-v3-turbo')
+        self.model_id = config.get('model_id', 'openai/whisper-large-v2')
+        self.batch_size = config.get('batch_size', 1)
+        self.language = config.get('language', 'en')
         
-        # Determine device
+        # Device detection
         if config.get('device'):
             self.device = config.get('device')
         else:
-            # Auto-detect device
             if torch.cuda.is_available():
-                self.device = "cuda"
+                self.device = "cuda:0"
             elif hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
                 self.device = "mps"
             else:
                 self.device = "cpu"
         
         self.torch_dtype = torch.float16 if self.device == "cuda" else torch.float32
-        self.batch_size = config.get('batch_size', 1)
-        self.language = config.get('language', 'en')
     
     def load(self):
         """Load the Whisper model from HuggingFace."""
-        print(f"Loading Whisper model '{self.model_id}' on {self.device}...")
+        logging.info(f"Loading Whisper model: {self.model_id}")
+        logging.info(f"Device: {self.device}, Language: {self.language}, Batch size: {self.batch_size}")
         
-        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            self.model_id,
-            torch_dtype=self.torch_dtype,
-            use_safetensors=True
-        )
-        self.model.to(self.device)
-        
-        self.processor = AutoProcessor.from_pretrained(self.model_id)
-        
-        generate_kwargs = {"language": self.language}
-        self.pipe = pipeline(
-            "automatic-speech-recognition",
-            model=self.model,
-            tokenizer=self.processor.tokenizer,
-            feature_extractor=self.processor.feature_extractor,
-            torch_dtype=self.torch_dtype,
-            device=self.device,
-            chunk_length_s=30,
-            batch_size=self.batch_size,
-            generate_kwargs=generate_kwargs,
-            return_timestamps="word"
-        )
-        
-        print("Whisper model loaded successfully.")
+        try:
+            # Clear cache before loading
+            self._clear_cache()
+            
+            self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                self.model_id,
+                torch_dtype=self.torch_dtype,
+                use_safetensors=True
+            )
+            self.model.to(self.device)
+            
+            self.processor = AutoProcessor.from_pretrained(self.model_id)
+            
+            generate_kwargs = {"language": self.language}
+            self.pipe = pipeline(
+                "automatic-speech-recognition",
+                model=self.model,
+                tokenizer=self.processor.tokenizer,
+                feature_extractor=self.processor.feature_extractor,
+                torch_dtype=self.torch_dtype,
+                device=self.device,
+                chunk_length_s=30,
+                batch_size=self.batch_size,
+                generate_kwargs=generate_kwargs,
+                return_timestamps="word"
+            )
+            
+            logging.info("Whisper model loaded successfully")
+            
+        except Exception as e:
+            logging.error(f"Failed to load Whisper model: {e}")
+            raise
+    
+    def _clear_cache(self):
+        """Clear GPU memory cache."""
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        gc.collect()
     
     def transcribe(self, audio_path):
         """
-        Transcribe the audio file using Whisper.
+        Transcribe audio using Whisper.
         
         Args:
-            audio_path (str): Path to the audio file
+            audio_path: Path to audio file
             
         Returns:
-            dict: Dictionary containing:
-                - text (str): The transcribed text
-                - chunks (list): Word-level information with timing
+            dict: Transcription results
         """
         try:
-            result = self.pipe(audio_path)
+            # Use no_grad context to prevent gradient computation
+            with torch.no_grad():
+                result = self.pipe(audio_path)
             
             # Extract transcript text
             transcript = result.get('text', '')
             
-            # Format word timestamps if they exist
+            # Format word timestamps
             chunks = []
             if 'chunks' in result:
                 for chunk in result['chunks']:
+                    timestamp = chunk.get('timestamp', [0, 0])
                     chunks.append({
                         'word': chunk.get('text', ''),
-                        'start_time': chunk.get('timestamp', [0, 0])[0],
-                        'end_time': chunk.get('timestamp', [0, 0])[1]
+                        'start_time': timestamp[0] if len(timestamp) > 0 else 0,
+                        'end_time': timestamp[1] if len(timestamp) > 1 else 0,
+                        'confidence': 0,  # Whisper doesn't provide word-level confidence
+                        'punctuated_word': chunk.get('text', '')
                     })
             
             return {
                 'text': transcript,
-                'chunks': chunks
+                'chunks': chunks,
+                'confidence': 0  # Whisper doesn't provide overall confidence scores
             }
+            
         except Exception as e:
-            print(f"Error transcribing {audio_path}: {e}")
-            return {'text': '', 'error': str(e)}
+            logging.error(f"Error transcribing with Whisper: {e}")
+            return {
+                'text': '',
+                'error': str(e)
+            }
+        finally:
+            # Clear cache after inference
+            self._clear_cache()

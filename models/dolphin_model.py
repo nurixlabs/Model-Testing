@@ -1,7 +1,12 @@
+"""
+Dolphin Speech-to-Text Model Implementation
+"""
 import os
 import re
+import logging
 import dolphin
 from models.base_model import BaseModel
+
 
 class DolphinModel(BaseModel):
     """Dolphin speech-to-text model implementation."""
@@ -18,13 +23,26 @@ class DolphinModel(BaseModel):
     
     def load(self):
         """Load the Dolphin model."""
-        print(f"Loading Dolphin model '{self.model_size}'...")
-        self.model = dolphin.load_model(self.model_size, self.model_dir, self.device)
-        print("Dolphin model loaded successfully.")
+        logging.info(f"Loading Dolphin model '{self.model_size}'")
+        logging.info(f"Model directory: {self.model_dir}, Device: {self.device}")
+        logging.info(f"Language: {self.language}, Region: {self.region}")
+        
+        try:
+            self.model = dolphin.load_model(self.model_size, self.model_dir, self.device)
+            logging.info("Dolphin model loaded successfully")
+        except Exception as e:
+            logging.error(f"Failed to load Dolphin model: {e}")
+            raise
     
     def clean_hypothesis_text(self, text):
         """
         Remove all tags like <en>, <us>, <asr>, and timestamp tags from hypothesis text.
+        
+        Args:
+            text: Raw text with tags
+            
+        Returns:
+            str: Cleaned text without tags
         """
         # Remove all tags enclosed in < >
         cleaned_text = re.sub(r'<[^>]+>', '', text)
@@ -32,15 +50,13 @@ class DolphinModel(BaseModel):
     
     def transcribe(self, audio_path):
         """
-        Transcribe the audio file using Dolphin.
+        Transcribe audio using Dolphin.
         
         Args:
-            audio_path (str): Path to the audio file
+            audio_path: Path to audio file
             
         Returns:
-            dict: Dictionary containing:
-                - text (str): The transcribed text
-                - raw_text (str): The raw transcribed text with tags
+            dict: Transcription results
         """
         try:
             waveform = dolphin.load_audio(audio_path)
@@ -49,16 +65,20 @@ class DolphinModel(BaseModel):
             # Get hypothesis from Dolphin result
             hypothesis = result.text.lower()
             
-            # Store the raw hypothesis with tags
+            # Store raw hypothesis with tags and clean version
             raw_hypothesis = hypothesis
-            
-            # Clean the hypothesis for display/storage
             clean_hypothesis = self.clean_hypothesis_text(hypothesis)
             
             return {
-                'raw_text': raw_hypothesis,  # Original text with tags
-                'text': clean_hypothesis,    # Cleaned text without tags
+                'text': clean_hypothesis,      # Cleaned text without tags
+                'raw_text': raw_hypothesis,    # Original text with tags
+                'chunks': [],                  # Dolphin doesn't provide word-level timing
+                'confidence': 0                # Dolphin doesn't provide confidence scores
             }
+            
         except Exception as e:
-            print(f"Error processing {audio_path}: {e}")
-            return {'text': "", 'error': str(e)}
+            logging.error(f"Error transcribing with Dolphin: {e}")
+            return {
+                'text': '',
+                'error': str(e)
+            }
