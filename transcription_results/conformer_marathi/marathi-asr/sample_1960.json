@@ -1,0 +1,10 @@
+{
+  "file_id": "sample_1960",
+  "ground_truth": "\u0915\u0949\u0932 \u0915\u0930",
+  "hypothesis": " \u0915\u0949\u0932 \u0915\u0930",
+  "wer": 0.0,
+  "cer": 0.0,
+  "chunks": [],
+  "confidence": 0,
+  "error": null
+}

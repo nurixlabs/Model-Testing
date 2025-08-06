@@ -143,7 +143,8 @@ Examples:
     
     # Get model configuration
     model_config = get_model_config(args.model, language)
-    
+
+
     # Add gcloud path for Google model
     if args.model in ['google', 'google_v2']:
         model_config['gcloud_path'] = args.gcloud_path

@@ -1,0 +1,10 @@
+{
+  "file_id": "sample_3469",
+  "ground_truth": "\u0906\u091c \u0926\u093f\u0935\u0938 \u0915\u093e\u092f \u0906\u0939\u0947",
+  "hypothesis": " \u0906\u091c \u0926\u093f\u0935\u0938 \u0915\u093e\u092f \u0906\u0939\u0947",
+  "wer": 0.0,
+  "cer": 0.0,
+  "chunks": [],
+  "confidence": 0,
+  "error": null
+}

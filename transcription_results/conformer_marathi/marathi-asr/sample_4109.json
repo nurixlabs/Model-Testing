@@ -1,0 +1,10 @@
+{
+  "file_id": "sample_4109",
+  "ground_truth": "\u0924\u0933\u0947\u0917\u093e\u0935 \u092e\u0927\u094d\u092f\u0947 \u0906\u091c \u092a\u093e\u090a\u0938 \u092a\u0921\u0947\u0932 \u0915\u093e",
+  "hypothesis": " \u0924\u0933\u0947\u0917\u093e\u0935 \u092e\u0927\u094d\u092f\u0947 \u0906\u091c \u092a\u093e\u090a\u0938 \u092a\u0921\u0947\u0932 \u0915\u093e",
+  "wer": 0.0,
+  "cer": 0.0,
+  "chunks": [],
+  "confidence": 0,
+  "error": null
+}

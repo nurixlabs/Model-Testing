@@ -18,8 +18,7 @@ from models.gladia_model import GladiaModel
 from models.nvidia_parakeet_model import NvidiaParakeetModel
 from models.azure_model import AzureModel
 from models.assemblyai_model import AssemblyAIModel
-from models.indic_conformer_model import IndicConformerModel
-from models.ai4bharat_conformer_model import AI4BharatConformerModel
+from models.conformer_marathi import ConformerMarathiModel
 
 
 # Model registry mapping names to classes
@@ -37,8 +36,7 @@ MODEL_REGISTRY = {
     'nvidia_parakeet': NvidiaParakeetModel,
     'assemblyai': AssemblyAIModel,
     'azure': AzureModel,
-    'indic-conformer': IndicConformerModel,
-    'AI4bharat-conformer': AI4BharatConformerModel,
+    'conformer_marathi': ConformerMarathiModel,
 }
 
 
