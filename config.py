@@ -1,18 +1,35 @@
-# Configuration for the STT evaluation pipeline
+"""
+Configuration for the STT evaluation pipeline
+Loads sensitive information from environment variables
+"""
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # S3 Configuration
 S3_CONFIG = {
-    'bucket_name': 'mlflow-artifacts-nurix',
-    'test_clean_prefix': 'librispeech/test-clean/',
-    'test_other_prefix': 'librispeech/test-other/',
+    'bucket_name': os.getenv('S3_BUCKET_NAME', 'mlflow-artifacts-nurix'),
+    'test_clean_prefix': os.getenv('S3_TEST_CLEAN_PREFIX', 'librispeech/test-clean/'),
+    'test_other_prefix': os.getenv('S3_TEST_OTHER_PREFIX', 'librispeech/test-other/'),
 }
 
-# API Keys - Replace with your actual keys or set via environment variables
+# API Keys - Loaded from environment variables
 API_KEYS = {
-    'deepgram': None,
-    'salad': None,
-    'google': None,  # Set via environment variable GOOGLE_API_KEY
-    'aws': None,     # Configure via AWS credentials
+    'deepgram': os.getenv('DEEPGRAM_API_KEY'),
+    'salad': os.getenv('SALAD_API_KEY'),
+    'sarvam': os.getenv('SARVAM_API_KEY'),
+    'google': os.getenv('GOOGLE_API_KEY'),
+    'aws': None,  # AWS uses IAM roles or AWS CLI configuration
+    'cartesia': os.getenv('CARTESIA_API_KEY'),
+    'nvidia_parakeet': None,
+    'assemblyai': os.getenv('ASSEMBLYAI_API_KEY'),
+    'azure': os.getenv('AZURE_SPEECH_KEY'),
+    'gladia': os.getenv('GLADIA_API_KEY'),
+    'indic-conformer': None,
+    'AI4bharat-conformer': None,
+    'conformer_marathi': None,
 }
 
 # Model Configurations
@@ -20,41 +37,141 @@ MODEL_CONFIGS = {
     'dolphin': {
         'model_size': 'small',
         'model_dir': '~/.cache/dolphin',
-        'device': 'cuda',
+        'device': 'cuda:0',
         'language': 'en',
-        'region': 'US',
+        'region': 'IN',
     },
     'whisper': {
-        'model_id': 'openai/whisper-large-v3-turbo',
+        'model_id': 'openai/whisper-large-v2',
         'device': None,  # Will be auto-detected (cuda, mps, or cpu)
         'batch_size': 1,
-        'language': 'en',
+        'language': 'hi',
     },
     'google': {
-        'language_code': 'en-US',
+        'language_code': 'en-IN',
+        'project_id': os.getenv('GOOGLE_PROJECT_ID', 'train-453515'),
+        'gcloud_path': './google-cloud-sdk/bin/gcloud',
+    },
+    'google_v2': {
+        'project_id': os.getenv('GOOGLE_PROJECT_ID', 'train-453515'),
+        'location': 'asia-south1',
+        'language_codes': ['en-IN'],
+        'model': 'chirp_2',
+        'enable_punctuation': True,
     },
     'aws': {
-        'language_code': 'en-US',
+        'language_code': 'hi-IN',
         'max_concurrent_jobs': 90,
         'output_prefix': 'transcripts',
+        'region': 'us-east-1',
+        's3_region': 'us-east-1',
     },
     'salad': {
         'organization': 'nurix-ai',
+        'api_base_url': 'https://api.salad.com',
     },
     'deepgram': {
-        'model': 'nova-3',
-        'language': 'en',
+        'model': 'nova-2',
+        'language': 'hi',
         'punctuate': True,
         'smart_format': True,
-    }
+        'location': 'us',
+    },
+    'sarvam': {
+        'model': 'saarika:v2',
+        'language_code': 'mr-IN',
+        'max_retries': 5,
+        'base_delay': 2.0,
+        'max_delay': 60.0,
+        'jitter': 0.25,
+        'requests_per_minute': 10,
+    },
+    'gladia': {
+        'model': 'solaria-1',
+        'target_languages': ['en'],
+    },
+    'cartesia': {
+        'model': 'ink-whisper',
+        'language': 'en',
+        'timestamp_granularities[]': 'word',
+    },
+    'nvidia_parakeet': {
+        'model_id': 'nvidia/parakeet-tdt-0.6b-v2',
+        'device': 'cuda' if os.getenv('USE_CUDA', 'true').lower() == 'true' else 'cpu',
+    },
+    'assemblyai': {
+        'language': 'en',
+        'punctuate': True,
+        'format_text': True,
+        'speaker_labels': False,
+        'auto_highlights': False,
+    },
+    'azure': {
+        'subscription_key': os.getenv('AZURE_SPEECH_KEY'),
+        'region': 'eastus',
+        'language': 'en-US',
+        'enable_word_timing': True,
+        'enable_punctuation': True,
+    },
+    'conformer_marathi': {
+        'model_id': 'chintan-nurix/indicconformer_stt_multi_hybrid_rnnt_600m',
+        'device': 'cuda' if os.getenv('USE_CUDA', 'true').lower() == 'true' else 'cpu',
+        'language_code': 'mr',
+        'decoding_method': 'ctc',
+    },
 }
 
 # Output Configuration
 OUTPUT_CONFIG = {
-    'base_dir': 'transcription_results',
+    'base_dir': os.getenv('OUTPUT_BASE_DIR', 'transcription_results'),
     'csv_filename': 'results.csv',
-    'max_audio_duration': 10 * 3600,  # 10 hours in seconds
+    'max_audio_duration': int(os.getenv('MAX_AUDIO_DURATION', '36000')),  # 10 hours in seconds
 }
 
 # Available Models
-AVAILABLE_MODELS = ['dolphin', 'whisper', 'google', 'aws', 'salad', 'deepgram']
+AVAILABLE_MODELS = [
+    'dolphin', 'whisper', 'google', 'google_v2', 'aws', 'salad', 
+    'deepgram', 'sarvam', 'gladia', 'cartesia', 'nvidia_parakeet', 
+    'assemblyai', 'azure', 'conformer_marathi'
+]
+
+# Language configurations for different datasets
+LANGUAGE_CONFIGS = {
+    'english': {
+        'models': ['dolphin', 'whisper', 'google', 'aws', 'deepgram', 'assemblyai', 'azure'],
+        'default_language_code': 'en-US',
+    },
+    'hindi': {
+        'models': ['whisper', 'google', 'aws', 'deepgram', 'sarvam'],
+        'default_language_code': 'hi-IN',
+    },
+    'marathi': {
+        'models': ['sarvam', 'indic-conformer', 'AI4bharat-conformer', 'conformer_marathi'],
+        'default_language_code': 'mr',
+    },
+    'hinglish': {
+        'models': ['whisper', 'google', 'deepgram'],
+        'default_language_code': 'hi-IN',
+    },
+}
+
+# Dataset configurations
+DATASET_CONFIGS = {
+    'librispeech': {
+        'bucket_name': S3_CONFIG['bucket_name'],
+        'prefixes': {
+            'test-clean': S3_CONFIG['test_clean_prefix'],
+            'test-other': S3_CONFIG['test_other_prefix'],
+        },
+        'language': 'english',
+    },
+    'marathi-asr': {
+        'source': 'huggingface',
+        'dataset_name': 'TheAIchemist13/marathi_asr_dataset',
+        'language': 'marathi',
+    },
+    'custom-csv': {
+        'source': 'csv',
+        'language': 'hinglish',  # Can be overridden
+    },
+}
