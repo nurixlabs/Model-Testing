@@ -14,44 +14,77 @@ A comprehensive evaluation framework for testing and comparing multiple Speech-t
 
 ## 📋 Available Models
 
-| Model | Type | Languages | API Required |
-|-------|------|-----------|--------------|
-| **Whisper** | Open Source | All | ❌ |
-| **Google Speech-to-Text** | Cloud | en-IN, hi-IN | ✅ |
-| **Google Chirp 2** | Cloud | en-IN | ✅ |
-| **AWS Transcribe** | Cloud | hi-IN | ✅ |
-| **Azure Speech** | Cloud | en-US | ✅ |
-| **Deepgram** | Cloud | hi, en | ✅ |
-| **Deepgram Self-Hosted** | Self-Hosted | hi, en | ❌ |
-| **Sarvam** | Cloud | mr-IN | ✅ |
-| **AssemblyAI** | Cloud | en | ✅ |
-| **Gladia** | Cloud | en | ✅ |
-| **Cartesia** | Cloud | en | ✅ |
-| **NVIDIA Parakeet** | Open Source | All | ❌ |
-| **Dolphin** | Open Source | en | ❌ |
-| **Conformer Marathi** | Open Source | mr | ❌ |
+| Model | Type | Languages | Language Codes | API Required |
+|-------|------|-----------|----------------|--------------|
+| **Whisper** | Open Source | All | en-US, en-IN, en-GB, hi-IN, mr-IN, en, hi, mr | ❌ |
+| **Google Speech-to-Text** | Cloud | English, Hindi | en-US, en-IN, en-GB, hi-IN | ✅ |
+| **Google Chirp 2** | Cloud | English (Indian) | en-IN | ✅ |
+| **AWS Transcribe** | Cloud | English, Hindi | en-US, en-IN, en-GB, hi-IN | ✅ |
+| **Azure Speech** | Cloud | English | en-US, en-GB | ✅ |
+| **Deepgram** | Cloud | English, Hindi, Hinglish | en-US, en-IN, en-GB, hi-IN, en, hi | ✅ |
+| **Deepgram Self-Hosted** | Self-Hosted | English, Hindi | en-US, en-IN, en-GB, hi-IN, en, hi | ❌ |
+| **Sarvam** | Cloud | Hindi, Marathi, Hinglish | hi-IN, mr-IN, en-IN | ✅ |
+| **AssemblyAI** | Cloud | English | en-US, en-GB | ✅ |
+| **Gladia** | Cloud | English | en-US, en-GB | ✅ |
+| **Cartesia** | Cloud | English | en-US, en-GB | ✅ |
+| **NVIDIA Parakeet** | Open Source | English | en-US, en-GB | ❌ |
+| **Dolphin** | Open Source | English | en-US | ❌ |
+| **Conformer Marathi** | Open Source | Marathi | mr-IN, mr | ❌ |
 
-## 🌍 Supported Languages
+## 🌍 Detailed Language Support
 
-### English
-- **Models**: dolphin, whisper, google, aws, deepgram, assemblyai, azure
-- **Default Code**: en-US
-- **Datasets**: LibriSpeech
+### 📊 Language Support Matrix
 
-### Hindi
-- **Models**: whisper, google, aws, deepgram, sarvam
-- **Default Code**: hi-IN
-- **Datasets**: Custom CSV
+| Language | Display Name | Language Codes | Supported Models | Best Model | Notes |
+|----------|--------------|----------------|------------------|------------|-------|
+| **English** | English | en-US, en-IN, en-GB, en | whisper, google, aws, deepgram, assemblyai, azure, gladia, cartesia, nvidia_parakeet, dolphin | whisper | Most comprehensive support |
+| **English (US)** | English (US) | en-US | whisper, google, aws, deepgram, assemblyai, azure, gladia, cartesia, nvidia_parakeet, dolphin | whisper | Best for US accents |
+| **English (Indian)** | English (Indian) | en-IN | whisper, google, google_v2, aws, deepgram, sarvam | google_v2 | Optimized for Indian English |
+| **English (British)** | English (British) | en-GB | whisper, google, aws, deepgram, assemblyai, azure, gladia, cartesia, nvidia_parakeet | whisper | British pronunciation support |
+| **Hindi** | Hindi | hi-IN, hi | whisper, google, aws, deepgram, sarvam | sarvam | Indian language specialist |
+| **Hindi (India)** | Hindi (India) | hi-IN | whisper, google, aws, deepgram, sarvam | sarvam | Best for Indian Hindi |
+| **Marathi** | Marathi | mr-IN, mr | whisper, sarvam, conformer_marathi | sarvam | Limited but excellent support |
+| **Marathi (India)** | Marathi (India) | mr-IN | sarvam, conformer_marathi | sarvam | Specialized for Indian Marathi |
+| **Hinglish** | Hinglish (Hindi-English Mixed) | hi-IN, en-IN | whisper, google, deepgram | whisper | Code-switching support |
 
-### Marathi
-- **Models**: sarvam, conformer_marathi
-- **Default Code**: mr
-- **Datasets**: Marathi ASR (HuggingFace)
+### 🎯 Quick Model Selection Guide
 
-### Hinglish (Hindi-English Mixed)
-- **Models**: whisper, google, deepgram
-- **Default Code**: hi-IN
-- **Datasets**: Custom CSV
+#### For English Speech Recognition
+- **Best Overall**: `whisper` (en-US, en-IN, en-GB) - Excellent accuracy, no API required
+- **High Accuracy**: `google` (en-US, en-IN, en-GB) - Requires Google Cloud setup
+- **Fast Processing**: `deepgram` (en-US, en-IN, en-GB) - Cloud-based, quick results
+- **Offline**: `dolphin` (en-US) - Local processing, GPU recommended
+
+#### For Hindi Speech Recognition
+- **Best Overall**: `sarvam` (hi-IN) - Specialized for Indian languages
+- **Multi-language**: `whisper` (hi-IN) - Good accuracy, no API required
+- **Cloud-based**: `deepgram` (hi-IN) - Fast processing with good accuracy
+- **Enterprise**: `google` (hi-IN) - High accuracy, requires setup
+
+#### For Marathi Speech Recognition
+- **Best Overall**: `sarvam` (mr-IN) - Specialized for Indian languages
+- **Local Processing**: `conformer_marathi` (mr-IN, mr) - Offline processing
+- **Multi-language**: `whisper` (mr-IN) - Good accuracy, no API required
+
+#### For Hinglish (Hindi-English Mixed)
+- **Best Overall**: `whisper` (hi-IN) - Good code-switching support
+- **Cloud-based**: `deepgram` (hi-IN) - Fast processing
+- **Enterprise**: `google` (hi-IN) - High accuracy
+
+### 🔧 Language Code Reference
+
+| Language Code | Language | Region | Models |
+|---------------|----------|--------|--------|
+| `en-US` | English | United States | All English models |
+| `en-IN` | English | India | whisper, google, google_v2, aws, deepgram, sarvam |
+| `en-GB` | English | United Kingdom | whisper, google, aws, deepgram, assemblyai, azure, gladia, cartesia, nvidia_parakeet |
+| `en` | English | Generic | whisper, deepgram |
+| `hi-IN` | Hindi | India | whisper, google, aws, deepgram, sarvam |
+| `hi` | Hindi | Generic | whisper, deepgram |
+| `mr-IN` | Marathi | India | whisper, sarvam, conformer_marathi |
+| `mr` | Marathi | Generic | whisper, conformer_marathi |
+
+
 
 ## 📦 Installation
 
@@ -178,6 +211,50 @@ python main.py --dataset librispeech --model google --test-set test-clean
 python main.py --dataset custom-csv --model aws --csv path/to/file.csv --language hindi
 ```
 
+### 🔍 Language Mapping Examples
+
+#### Find models for a specific language
+```bash
+# Find models supporting English
+python main.py --find-models "english"
+
+# Find models supporting Hindi with language code
+python main.py --find-models "hi-IN"
+
+# Find models supporting Marathi
+python main.py --find-models "marathi"
+```
+
+#### Find languages supported by a model
+```bash
+# Find all languages supported by Whisper
+python main.py --find-languages "whisper"
+
+# Find all languages supported by Sarvam
+python main.py --find-languages "sarvam"
+```
+
+#### Get quick recommendations
+```bash
+# Get recommendations for English speech
+python main.py --recommendations "english_speech"
+
+# Get recommendations for offline processing
+python main.py --recommendations "offline_processing"
+
+# Get recommendations for Hindi speech
+python main.py --recommendations "hindi_speech"
+```
+
+#### List all available options
+```bash
+# List all languages and their codes
+python main.py --list-languages
+
+# List all models and their language support
+python main.py --list-models
+```
+
 ### Command Line Arguments
 
 | Argument | Required | Description | Options |
@@ -190,6 +267,16 @@ python main.py --dataset custom-csv --model aws --csv path/to/file.csv --languag
 | `--output-dir` | ❌ | Output directory | Directory path |
 | `--gcloud-path` | ❌ | Path to gcloud executable | File path |
 | `--debug` | ❌ | Enable debug logging | Flag |
+
+### 🔍 Language Mapping Utilities
+
+| Argument | Description | Example |
+|----------|-------------|---------|
+| `--find-models` | Find models supporting a language | `--find-models "english"` or `--find-models "hi-IN"` |
+| `--find-languages` | Find languages supported by a model | `--find-languages "whisper"` |
+| `--recommendations` | Get model recommendations for use case | `--recommendations "english_speech"` |
+| `--list-languages` | List all available languages and codes | `--list-languages` |
+| `--list-models` | List all models and their language support | `--list-models` |
 
 ## 📊 Output
 

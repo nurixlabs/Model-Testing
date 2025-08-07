@@ -1,5 +1,5 @@
 """
-Conformer Marathi Model Implementation - Complete Working Version
+Conformer Marathi Model Implementation
 """
 
 import os
