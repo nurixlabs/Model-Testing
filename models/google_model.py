@@ -1,40 +1,59 @@
+"""
+Google Speech-to-Text v1 API Model Implementation
+"""
 import os
 import base64
+import logging
 import requests
 import subprocess
 from models.base_model import BaseModel
 from pathlib import Path
 
+
 class GoogleModel(BaseModel):
-    """Google Speech-to-Text API implementation."""
+    """Google Speech-to-Text v1 API implementation."""
     
     def __init__(self, config):
         super().__init__(config)
         self.name = "google"
-        self.api_key = os.environ.get('GOOGLE_API_KEY', config.get('api_key'))
+        self.api_key = config.get('api_key', os.environ.get('GOOGLE_API_KEY'))
         self.language_code = config.get('language_code', 'en-US')
+        self.project_id = config.get('project_id', os.environ.get('GOOGLE_PROJECT_ID', 'acoustic-shade-453507-f6'))
+        self.gcloud_path = config.get('gcloud_path', './google-cloud-sdk/bin/gcloud')
     
     def load(self):
         """Initialize Google Speech-to-Text setup."""
-        # Verify API key or Google Cloud authentication
+        logging.info("Initializing Google Speech-to-Text v1")
+        logging.info(f"Language: {self.language_code}, Project ID: {self.project_id}")
+        logging.info(f"gcloud path: {self.gcloud_path}")
+        
         if not self.api_key and not self._check_gcloud_auth():
-            print("WARNING: No Google API key provided and gcloud authentication not set up.")
-            print("You will need to authenticate with Google Cloud before transcription.")
+            logging.warning("No Google API key provided and gcloud authentication not set up")
+            logging.warning("You will need to authenticate with Google Cloud before transcription")
         else:
-            print("Google Speech-to-Text initialized successfully.")
+            logging.info("Google Speech-to-Text initialized successfully")
+        
+        if not self.project_id:
+            logging.warning("No Google Project ID provided for quota project")
+            logging.warning("You may encounter permission errors. Set GOOGLE_PROJECT_ID environment variable")
     
     def _check_gcloud_auth(self):
         """Check if gcloud authentication is set up."""
         try:
             result = subprocess.run(
-                ['gcloud', 'auth', 'print-access-token'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                check=True
+                check=False
             )
+            
+            if result.returncode != 0:
+                logging.debug(f"gcloud auth check failed: {result.stderr}")
+                return False
+                
             return bool(result.stdout.strip())
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except Exception as e:
+            logging.debug(f"Error checking gcloud auth: {e}")
             return False
     
     def _get_access_token(self):
@@ -44,24 +63,33 @@ class GoogleModel(BaseModel):
             
         try:
             result = subprocess.run(
-                ['gcloud', 'auth', 'print-access-token'],
+                [self.gcloud_path, 'auth', 'print-access-token'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                check=True
+                check=False
             )
-            return result.stdout.strip()
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            print(f"Error getting access token using gcloud: {e}")
-            print("Please set the GOOGLE_API_KEY environment variable or configure gcloud.")
+            
+            if result.returncode != 0:
+                logging.error(f"Error getting access token: {result.stderr}")
+                return None
+                
+            token = result.stdout.strip()
+            if not token:
+                logging.error("No access token returned from gcloud")
+                return None
+                
+            return token
+        except Exception as e:
+            logging.error(f"Error getting access token using gcloud: {e}")
             return None
     
     def _detect_audio_format(self, file_path):
         """
         Detect the audio format and sample rate of a file.
         
-        Parameters:
-            file_path (str): Path to the audio file.
+        Args:
+            file_path: Path to the audio file
             
         Returns:
             tuple: (encoding, sample_rate_hertz)
@@ -73,116 +101,120 @@ class GoogleModel(BaseModel):
         # Check file extension
         file_ext = Path(file_path).suffix.lower()
         
-        if file_ext == '.flac':
-            encoding = "FLAC"
-        elif file_ext == '.wav':
-            encoding = "LINEAR16"
-        elif file_ext == '.mp3':
-            encoding = "MP3"
-        elif file_ext == '.ogg':
-            encoding = "OGG_OPUS"
+        format_map = {
+            '.flac': "FLAC",
+            '.wav': "LINEAR16", 
+            '.mp3': "MP3",
+            '.ogg': "OGG_OPUS"
+        }
         
-        # For a more accurate approach, you'd want to use a library like pydub or ffprobe
-        # to detect the sample rate
+        encoding = format_map.get(file_ext, "FLAC")
         
         return encoding, sample_rate_hertz
     
     def transcribe(self, audio_path):
         """
-        Transcribe the audio file using Google Speech-to-Text.
+        Transcribe audio using Google Speech-to-Text v1.
         
         Args:
-            audio_path (str): Path to the audio file
+            audio_path: Path to audio file
             
         Returns:
-            dict: Dictionary containing:
-                - text (str): The transcribed text
-                - confidence (float): Confidence score
+            dict: Transcription results
         """
         try:
             # Get access token for authorization
             access_token = self._get_access_token()
             if not access_token:
-                return {"error": "Failed to get access token", "text": ""}
+                return {
+                    'text': '',
+                    'error': 'Failed to get access token'
+                }
             
             # Detect audio format and sample rate
             encoding, sample_rate_hertz = self._detect_audio_format(audio_path)
             
-            # Read audio file as binary and encode as base64
+            # Read and encode audio file
             with open(audio_path, 'rb') as audio_file:
                 audio_content = audio_file.read()
             
             audio_content_base64 = base64.b64encode(audio_content).decode('utf-8')
             
-            # Prepare the request body
+            # Prepare request
             request_body = {
                 "config": {
                     "encoding": encoding,
                     "sampleRateHertz": sample_rate_hertz,
                     "languageCode": self.language_code,
                     "enableWordTimeOffsets": True,
-                    "enableAutomaticPunctuation": True
+                    "enableAutomaticPunctuation": True,
+                    "model": "default",
                 },
                 "audio": {
                     "content": audio_content_base64
                 }
             }
             
-            # Make the API request
+            # Set up headers
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {access_token}"
             }
             
+            if self.project_id:
+                headers["x-goog-user-project"] = self.project_id
+            
+            # Make API request
             response = requests.post(
-                "https://speech.googleapis.com/v1/speech:recognize",
+                "https://speech.googleapis.com/v2/speech:recognize",
                 headers=headers,
                 json=request_body
             )
             
             if response.status_code != 200:
-                print(f"Error response ({response.status_code}): {response.text}")
-                return {"error": response.text, "text": ""}
+                logging.error(f"Google API error ({response.status_code}): {response.text}")
+                return {
+                    'text': '',
+                    'error': response.text
+                }
             
             response_json = response.json()
             
-            # Extract transcript text
+            # Extract transcript and confidence
             transcript = ""
             confidence = 0
+            chunks = []
             
             if "results" in response_json:
                 for result in response_json["results"]:
                     if "alternatives" in result and result["alternatives"]:
                         alt = result["alternatives"][0]
-                        transcript += alt["transcript"] + " "
-                        if "confidence" in alt:
-                            # For overall confidence, we'll just use the confidence of the first result
-                            # A more sophisticated approach would weight by length of each segment
-                            if confidence == 0:
-                                confidence = alt["confidence"]
-            
-            # Extract word timings
-            words = []
-            if "results" in response_json:
-                for result in response_json["results"]:
-                    if "alternatives" in result and result["alternatives"]:
-                        alt = result["alternatives"][0]
+                        transcript += alt.get("transcript", "") + " "
+                        
+                        # Get confidence from first result
+                        if confidence == 0 and "confidence" in alt:
+                            confidence = alt["confidence"]
+                        
+                        # Extract word timings
                         if "words" in alt:
                             for word_info in alt["words"]:
-                                word = {
-                                    "word": word_info["word"],
-                                    "start_time": float(word_info["startTime"].rstrip("s")),
-                                    "end_time": float(word_info["endTime"].rstrip("s"))
-                                }
-                                words.append(word)
+                                chunks.append({
+                                    'word': word_info.get("word", ""),
+                                    'start_time': float(word_info.get("startTime", "0s").rstrip("s")),
+                                    'end_time': float(word_info.get("endTime", "0s").rstrip("s")),
+                                    'confidence': confidence,
+                                    'punctuated_word': word_info.get("word", "")
+                                })
             
             return {
-                "text": transcript.strip(),
-                "confidence": confidence,
-                "chunks": words,
-                "raw_response": response_json
+                'text': transcript.strip(),
+                'chunks': chunks,
+                'confidence': confidence
             }
             
         except Exception as e:
-            print(f"Error transcribing with Google STT: {e}")
-            return {"text": "", "error": str(e)}
+            logging.error(f"Error transcribing with Google Speech v1: {e}")
+            return {
+                'text': '',
+                'error': str(e)
+            }
