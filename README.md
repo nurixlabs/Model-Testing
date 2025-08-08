@@ -211,50 +211,6 @@ python main.py --dataset librispeech --model google --test-set test-clean
 python main.py --dataset custom-csv --model aws --csv path/to/file.csv --language hindi
 ```
 
-### 🔍 Language Mapping Examples
-
-#### Find models for a specific language
-```bash
-# Find models supporting English
-python main.py --find-models "english"
-
-# Find models supporting Hindi with language code
-python main.py --find-models "hi-IN"
-
-# Find models supporting Marathi
-python main.py --find-models "marathi"
-```
-
-#### Find languages supported by a model
-```bash
-# Find all languages supported by Whisper
-python main.py --find-languages "whisper"
-
-# Find all languages supported by Sarvam
-python main.py --find-languages "sarvam"
-```
-
-#### Get quick recommendations
-```bash
-# Get recommendations for English speech
-python main.py --recommendations "english_speech"
-
-# Get recommendations for offline processing
-python main.py --recommendations "offline_processing"
-
-# Get recommendations for Hindi speech
-python main.py --recommendations "hindi_speech"
-```
-
-#### List all available options
-```bash
-# List all languages and their codes
-python main.py --list-languages
-
-# List all models and their language support
-python main.py --list-models
-```
-
 ### Command Line Arguments
 
 | Argument | Required | Description | Options |
@@ -267,16 +223,6 @@ python main.py --list-models
 | `--output-dir` | ❌ | Output directory | Directory path |
 | `--gcloud-path` | ❌ | Path to gcloud executable | File path |
 | `--debug` | ❌ | Enable debug logging | Flag |
-
-### 🔍 Language Mapping Utilities
-
-| Argument | Description | Example |
-|----------|-------------|---------|
-| `--find-models` | Find models supporting a language | `--find-models "english"` or `--find-models "hi-IN"` |
-| `--find-languages` | Find languages supported by a model | `--find-languages "whisper"` |
-| `--recommendations` | Get model recommendations for use case | `--recommendations "english_speech"` |
-| `--list-languages` | List all available languages and codes | `--list-languages` |
-| `--list-models` | List all models and their language support | `--list-models` |
 
 ## 📊 Output
 
