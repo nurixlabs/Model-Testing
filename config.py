@@ -29,6 +29,7 @@ API_KEYS = {
     'gladia': os.getenv('GLADIA_API_KEY'),
     'indic-conformer': None,
     'AI4bharat-conformer': None,
+    'conformer_marathi': None,
 }
 
 # Model Configurations
@@ -112,15 +113,11 @@ MODEL_CONFIGS = {
         'enable_word_timing': True,
         'enable_punctuation': True,
     },
-    'indic-conformer': {
-        'language': 'mr',
-        'decoding_method': 'rnnt',
-        'target_sample_rate': 16000,
-        'device': 'auto',
-        'model_name': 'ai4bharat/indic-conformer-600m-multilingual',
-    },
-    'AI4bharat-conformer': {
-        'model_id': 'ai4bharat/indicconformer_stt_mr_hybrid_rnnt_large',
+    'conformer_marathi': {
+        'model_id': 'chintan-nurix/indicconformer_stt_multi_hybrid_rnnt_600m',
+        'device': 'cuda' if os.getenv('USE_CUDA', 'true').lower() == 'true' else 'cpu',
+        'language_code': 'mr',
+        'decoding_method': 'ctc',
     },
 }
 
@@ -135,7 +132,7 @@ OUTPUT_CONFIG = {
 AVAILABLE_MODELS = [
     'dolphin', 'whisper', 'google', 'google_v2', 'aws', 'salad', 
     'deepgram', 'sarvam', 'gladia', 'cartesia', 'nvidia_parakeet', 
-    'assemblyai', 'azure', 'indic-conformer', 'AI4bharat-conformer'
+    'assemblyai', 'azure', 'conformer_marathi'
 ]
 
 # Language configurations for different datasets
@@ -149,8 +146,8 @@ LANGUAGE_CONFIGS = {
         'default_language_code': 'hi-IN',
     },
     'marathi': {
-        'models': ['sarvam', 'indic-conformer', 'AI4bharat-conformer'],
-        'default_language_code': 'mr-IN',
+        'models': ['sarvam', 'indic-conformer', 'AI4bharat-conformer', 'conformer_marathi'],
+        'default_language_code': 'mr',
     },
     'hinglish': {
         'models': ['whisper', 'google', 'deepgram'],

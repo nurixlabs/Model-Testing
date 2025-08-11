@@ -20,6 +20,7 @@ from models.assemblyai_model import AssemblyAIModel
 from models.azure_model import AzureModel
 from models.indic_conformer_model import IndicConformerModel
 from models.ai4bharat_conformer_model import AI4BharatConformerModel
+from models.conformer_marathi import ConformerMarathiModel
 
 # Import factory function for dynamic model creation
 from models.model_factory import get_model, get_available_models, is_model_available
@@ -45,7 +46,7 @@ __all__ = [
     'AzureModel',
     'IndicConformerModel',
     'AI4BharatConformerModel',
-    
+    'ConformerMarathiModel',
     # Factory functions
     'get_model',
     'get_available_models',
