@@ -3,10 +3,73 @@ Configuration for the STT evaluation pipeline
 Loads sensitive information from environment variables
 """
 import os
-from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+
+
+# Standard models available across all languages
+STANDARD_MODELS = {
+    'dolphin': {
+        'display_name': 'Dolphin',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': False
+    },
+    'whisper': {
+        'display_name': 'Whisper Large v2',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': False
+    },
+    'google': {
+        'display_name': 'Google STT',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    },
+    'google_v2': {
+        'display_name': 'Google STT v2',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    },
+    'aws': {
+        'display_name': 'AWS STT',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    },
+    'salad': {
+        'display_name': 'Salad',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    },
+    'deepgram_nova3': {
+        'display_name': 'Deepgram Nova 3',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    },
+    'deepgram_nova2': {
+        'display_name': 'Deepgram Nova 2',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    },
+    'sarvam': {
+        'display_name': 'SARVAM',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    },
+    'gladia': {
+        'display_name': 'Gladia',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    },
+    'azure': {
+        'display_name': 'AZURE',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    },
+    'assemblyai': {
+        'display_name': 'AssemblyAI',
+        'languages': ['english', 'hinglish', 'marathi'],
+        'streaming': True
+    }
+}
 
 # S3 Configuration
 S3_CONFIG = {
@@ -54,7 +117,7 @@ MODEL_CONFIGS = {
     },
     'google_v2': {
         'project_id': os.getenv('GOOGLE_PROJECT_ID', 'train-453515'),
-        'location': 'asia-south1',
+        'location': 'us-central1',
         'language_codes': ['en-IN'],
         'model': 'chirp_2',
         'enable_punctuation': True,
@@ -71,6 +134,20 @@ MODEL_CONFIGS = {
         'api_base_url': 'https://api.salad.com',
     },
     'deepgram': {
+        'model': 'nova-2',
+        'language': 'hi',
+        'punctuate': True,
+        'smart_format': True,
+        'location': 'us',
+    },
+    'deepgram_nova3': {
+        'model': 'nova-3',
+        'language': 'hi',
+        'punctuate': True,
+        'smart_format': True,
+        'location': 'us',
+    },
+    'deepgram_nova2': {
         'model': 'nova-2',
         'language': 'hi',
         'punctuate': True,
@@ -108,8 +185,8 @@ MODEL_CONFIGS = {
     },
     'azure': {
         'subscription_key': os.getenv('AZURE_SPEECH_KEY'),
-        'region': 'eastus',
-        'language': 'en-US',
+        'region': 'southeastasia',
+        'language': 'en-IN',  # Default to Indian English
         'enable_word_timing': True,
         'enable_punctuation': True,
     },
@@ -131,26 +208,26 @@ OUTPUT_CONFIG = {
 # Available Models
 AVAILABLE_MODELS = [
     'dolphin', 'whisper', 'google', 'google_v2', 'aws', 'salad', 
-    'deepgram', 'sarvam', 'gladia', 'cartesia', 'nvidia_parakeet', 
+    'deepgram', 'deepgram_nova3', 'deepgram_nova2', 'sarvam', 'gladia', 'cartesia', 'nvidia_parakeet', 
     'assemblyai', 'azure', 'conformer_marathi'
 ]
 
 # Language configurations for different datasets
 LANGUAGE_CONFIGS = {
     'english': {
-        'models': ['dolphin', 'whisper', 'google', 'aws', 'deepgram', 'assemblyai', 'azure'],
+        'models': ['dolphin', 'whisper', 'google', 'google_v2', 'aws', 'deepgram_nova3', 'deepgram_nova2', 'assemblyai', 'azure', 'salad', 'gladia', 'sarvam'],
         'default_language_code': 'en-US',
     },
     'hindi': {
-        'models': ['whisper', 'google', 'aws', 'deepgram', 'sarvam'],
+        'models': ['whisper', 'google', 'google_v2', 'aws', 'deepgram_nova3', 'deepgram_nova2', 'sarvam', 'azure', 'gladia'],
         'default_language_code': 'hi-IN',
     },
     'marathi': {
-        'models': ['sarvam', 'indic-conformer', 'AI4bharat-conformer', 'conformer_marathi'],
+        'models': ['whisper', 'google', 'google_v2', 'aws', 'deepgram_nova3', 'deepgram_nova2', 'sarvam', 'azure', 'gladia', 'indic-conformer', 'AI4bharat-conformer', 'conformer_marathi'],
         'default_language_code': 'mr',
     },
     'hinglish': {
-        'models': ['whisper', 'google', 'deepgram'],
+        'models': ['whisper', 'google', 'google_v2', 'aws', 'deepgram_nova3', 'deepgram_nova2', 'azure', 'salad', 'gladia', 'sarvam'],
         'default_language_code': 'hi-IN',
     },
 }

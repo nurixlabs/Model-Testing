@@ -8,18 +8,17 @@ import logging
 from models.dolphin_model import DolphinModel
 from models.whisper_model import WhisperModel
 from models.google_model import GoogleModel
-from models.google_chirp2_model import GoogleChirp2Model
+from models.google_model_v2 import GoogleChirp2Model
 from models.aws_model import AWSModel
 from models.salad_model import SaladModel
 from models.deepgram_model import DeepgramModel
-from models.deepgram_selfhosted_model import DeepgramSelfHostedModel
 from models.sarvam_model import SarvamModel
 from models.gladia_model import GladiaModel
-from models.nvidia_parakeet_model import NvidiaParakeetModel
 from models.azure_model import AzureModel
 from models.assemblyai_model import AssemblyAIModel
 from models.conformer_marathi import ConformerMarathiModel
-
+from models.nvidia_parakeet import NvidiaParakeetModel
+from models.cartesia_whisper_model import CartesiaInkWhisperModel
 
 # Model registry mapping names to classes
 MODEL_REGISTRY = {
@@ -30,13 +29,15 @@ MODEL_REGISTRY = {
     'aws': AWSModel,
     'salad': SaladModel,
     'deepgram': DeepgramModel,
-    'deepgram_selfhosted': DeepgramSelfHostedModel,
+    'deepgram_nova3': DeepgramModel,  # Use same class with different config
+    'deepgram_nova2': DeepgramModel,  # Use same class with different config
     'sarvam': SarvamModel,
     'gladia': GladiaModel,
     'nvidia_parakeet': NvidiaParakeetModel,
     'assemblyai': AssemblyAIModel,
     'azure': AzureModel,
     'conformer_marathi': ConformerMarathiModel,
+    'cartesia': CartesiaInkWhisperModel
 }
 
 
@@ -62,7 +63,19 @@ def get_model(model_name, config):
     
     try:
         model_class = MODEL_REGISTRY[model_name]
-        return model_class(config)
+        model_instance = model_class(config)
+        
+        # Set specific name for Deepgram variants
+        if model_name == 'deepgram_nova3':
+            model_instance.name = 'deepgram_nova3'
+            if not config.get('model'):
+                config['model'] = 'nova-3'
+        elif model_name == 'deepgram_nova2':
+            model_instance.name = 'deepgram_nova2'
+            if not config.get('model'):
+                config['model'] = 'nova-2'
+        
+        return model_instance
     except Exception as e:
         logging.error(f"Failed to create model {model_name}: {e}")
         raise

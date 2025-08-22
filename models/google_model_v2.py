@@ -19,7 +19,7 @@ class GoogleChirp2Model(BaseModel):
         self.name = "google_chirp2"
         self.client = None
         self.project_id = config.get('project_id', 'train-453515')
-        self.location = config.get('location', 'asia-south1')
+        self.location = config.get('location', 'us-central1')
         self.api_endpoint = f"{self.location}-speech.googleapis.com"
         self.language_codes = config.get('language_codes', ['en-IN'])
         self.model = config.get('model', 'chirp_2')
