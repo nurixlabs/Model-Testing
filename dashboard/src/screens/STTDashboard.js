@@ -26,7 +26,7 @@ const STTDashboard = () => {
   // Load STT data from backend
   useEffect(() => {
     console.log('Fetching data from backend...');
-    fetch('http://127.0.0.1:5000/api/results')
+    fetch('/api/results')
       .then(res => {
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
@@ -140,7 +140,7 @@ const STTDashboard = () => {
     formData.append('dataset_name', `custom_${uploadedFile.name.replace('.csv', '')}_${Date.now()}`);
     
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/test-csv', {
+      const response = await fetch('/api/test-csv', {
         method: 'POST',
         body: formData
       });
@@ -150,7 +150,7 @@ const STTDashboard = () => {
       if (result.task_id) {
         // Poll for progress
         const pollInterval = setInterval(async () => {
-          const statusRes = await fetch(`http://127.0.0.1:5000/api/task/${result.task_id}`);
+          const statusRes = await fetch(`/api/task/${result.task_id}`);
           const status = await statusRes.json();
           
           if (status.progress) {
@@ -162,7 +162,7 @@ const STTDashboard = () => {
             setTestingProgress(100);
             
             // Reload data to include new dataset
-            const dataRes = await fetch('http://127.0.0.1:5000/api/results');
+            const dataRes = await fetch('/api/results');
             const newData = await dataRes.json();
             setSttData(newData);
             
@@ -200,7 +200,7 @@ const STTDashboard = () => {
     formData.append('language', selectedLanguage);
     
     try {
-      const response = await fetch('http://127.0.0.1:5000/api/audio-test', {
+      const response = await fetch('/api/audio-test', {
         method: 'POST',
         body: formData
       });

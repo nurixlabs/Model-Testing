@@ -9,18 +9,39 @@ import tempfile
 import threading
 import time
 from datetime import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+
+# Initialize AWS Secrets Manager early
+try:
+    from secrets_manager import initialize_secrets, get_secret
+    logger = logging.getLogger(__name__)
+    logger.info("Initializing AWS Secrets Manager...")
+    if initialize_secrets():
+        logger.info("✅ AWS Secrets Manager initialized successfully")
+    else:
+        logger.warning("⚠️ AWS Secrets Manager initialization failed, falling back to environment variables")
+except ImportError as e:
+    logger.warning(f"Secrets manager not available: {e}")
+    get_secret = os.environ.get
 
 
 # Try to import model-related modules
 try:
-    from models.model_factory import get_model
-    from config import MODEL_CONFIGS, AVAILABLE_MODELS, LANGUAGE_CONFIGS, STANDARD_MODELS
-    MODELS_AVAILABLE = True
+    from config import STANDARD_MODELS
+    # Try to import model factory for actual model execution (optional)
+    try:
+        from models.model_factory import get_model
+        from config import MODEL_CONFIGS, AVAILABLE_MODELS, LANGUAGE_CONFIGS
+        MODELS_AVAILABLE = True
+    except ImportError:
+        # Model execution not available, but we can still show standard models
+        from config import MODEL_CONFIGS, AVAILABLE_MODELS, LANGUAGE_CONFIGS
+        MODELS_AVAILABLE = False
+        get_model = None
 except ImportError as e:
-    logging.warning(f"Could not import model modules: {e}")
+    logging.warning(f"Could not import config modules: {e}")
     MODELS_AVAILABLE = False
     # Define some defaults if imports fail
     MODEL_CONFIGS = {}
@@ -44,12 +65,24 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 running_tasks = {}
 
 # Initial STT data - this is your actual data
-try:
-    with open('/home/azureuser/test-pipelines/Model-Testing/dashboard/src/sttData.json', 'r') as f:
-        STT_DATA = json.load(f)
-except FileNotFoundError:
-    logger.warning("sttData.json not found, using empty data")
-    STT_DATA = {}
+# Try multiple possible locations for the STT data file
+STT_DATA = {}
+for stt_data_path in [
+    'dashboard/src/sttData.json',  # Container path
+    '/app/dashboard/src/sttData.json',  # Absolute container path
+    '/home/azureuser/test-pipelines/Model-Testing/dashboard/src/sttData.json'  # Legacy path
+]:
+    try:
+        with open(stt_data_path, 'r') as f:
+            STT_DATA = json.load(f)
+        logger.info(f"✅ Successfully loaded STT data from {stt_data_path}")
+        break
+    except FileNotFoundError:
+        logger.debug(f"STT data file not found at {stt_data_path}")
+        continue
+
+if not STT_DATA:
+    logger.warning("⚠️ No STT data file found, using empty data")
 
 # Store the current data in memory
 current_stt_data = STT_DATA.copy()
@@ -426,9 +459,14 @@ def get_task_status(task_id):
     return jsonify(running_tasks[task_id])
 
 
+@app.route('/health', methods=['GET'])
+def simple_health_check():
+    """Simple health check endpoint for ALB"""
+    return jsonify({'status': 'healthy'})
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Detailed health check endpoint"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
@@ -436,6 +474,72 @@ def health_check():
         'model_count': len(AVAILABLE_MODELS) if MODELS_AVAILABLE else 0,
         'standard_models': len(STANDARD_MODELS)
     })
+
+
+# Static files for React frontend
+@app.route('/static/css/<path:filename>')
+def serve_static_css(filename):
+    """Serve CSS files for React frontend"""
+    try:
+        return send_from_directory('dashboard/build/static/css', filename)
+    except FileNotFoundError:
+        logger.warning(f"CSS file not found: {filename}")
+        return "File not found", 404
+
+@app.route('/static/js/<path:filename>')
+def serve_static_js(filename):
+    """Serve JS files for React frontend"""
+    try:
+        return send_from_directory('dashboard/build/static/js', filename)
+    except FileNotFoundError:
+        logger.warning(f"JS file not found: {filename}")
+        return "File not found", 404
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Serve other static files for React frontend"""
+    try:
+        # Try specific subdirectories first
+        if filename.startswith('css/'):
+            return send_from_directory('dashboard/build/static', filename)
+        elif filename.startswith('js/'):
+            return send_from_directory('dashboard/build/static', filename)
+        else:
+            return send_from_directory('dashboard/build/static', filename)
+    except FileNotFoundError:
+        logger.warning(f"Static file not found: {filename}")
+        return "File not found", 404
+
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_react_app(path):
+    """Serve React frontend for all non-API routes"""
+    # Skip serving React app for API routes
+    if path.startswith('api/'):
+        return "API endpoint not found", 404
+    
+    try:
+        # Try to serve the requested file first
+        if path and not path.startswith('api'):
+            try:
+                return send_from_directory('dashboard/build', path)
+            except FileNotFoundError:
+                pass
+        
+        # Default to serving index.html (SPA routing)
+        return send_from_directory('dashboard/build', 'index.html')
+    except FileNotFoundError:
+        logger.error("React build files not found. Please ensure the frontend is built.")
+        return """
+        <h1>STT Dashboard</h1>
+        <p>Frontend build files not found. The React app needs to be built first.</p>
+        <p>Available API endpoints:</p>
+        <ul>
+            <li><a href="/api/results">/api/results</a> - Get test results</li>
+            <li><a href="/api/health">/api/health</a> - Health check</li>
+        </ul>
+        """, 200
 
 
 if __name__ == '__main__':

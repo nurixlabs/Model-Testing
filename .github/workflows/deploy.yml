@@ -1,0 +1,129 @@
+name: Build and Deploy ASR Dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+      force_deploy:
+        description: 'Force deployment even if no changes'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: asr/dashboard
+  EKS_CLUSTER_NAME: prod-eks-cluster
+  K8S_NAMESPACE: asr-dashboard
+  K8S_DEPLOYMENT_NAME: asr-dashboard
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Generate image tag
+      id: image-tag
+      run: |
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        COMMIT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+        IMAGE_TAG="${TIMESTAMP}-${COMMIT_SHA}"
+        echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+        echo "Generated image tag: ${IMAGE_TAG}"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64
+        push: true
+        tags: |
+          ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.IMAGE_TAG }}
+          ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+
+    - name: Update deployment image
+      run: |
+        NEW_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.IMAGE_TAG }}"
+        echo "Updating deployment with new image: ${NEW_IMAGE}"
+        
+        kubectl set image deployment/${{ env.K8S_DEPLOYMENT_NAME }} \
+          ${{ env.K8S_DEPLOYMENT_NAME }}=${NEW_IMAGE} \
+          -n ${{ env.K8S_NAMESPACE }}
+
+    - name: Wait for rollout to complete
+      run: |
+        echo "Waiting for deployment rollout to complete..."
+        kubectl rollout status deployment/${{ env.K8S_DEPLOYMENT_NAME }} \
+          -n ${{ env.K8S_NAMESPACE }} \
+          --timeout=600s
+
+    - name: Verify deployment
+      run: |
+        echo "Verifying deployment..."
+        kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=${{ env.K8S_DEPLOYMENT_NAME }}
+        kubectl get deployment ${{ env.K8S_DEPLOYMENT_NAME }} -n ${{ env.K8S_NAMESPACE }}
+        
+        # Check if pods are ready
+        READY_PODS=$(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=${{ env.K8S_DEPLOYMENT_NAME }} --field-selector=status.phase=Running -o jsonpath='{.items[*].status.containerStatuses[*].ready}' | tr ' ' '\n' | grep -c true || true)
+        TOTAL_PODS=$(kubectl get pods -n ${{ env.K8S_NAMESPACE }} -l app=${{ env.K8S_DEPLOYMENT_NAME }} --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}' | wc -w)
+        
+        echo "Ready pods: ${READY_PODS}/${TOTAL_PODS}"
+        
+        if [ "${READY_PODS}" -eq "${TOTAL_PODS}" ] && [ "${TOTAL_PODS}" -gt 0 ]; then
+          echo "✅ Deployment successful! All pods are ready."
+        else
+          echo "❌ Deployment verification failed. Not all pods are ready."
+          exit 1
+        fi
+
+    - name: Get application URL
+      run: |
+        INGRESS_URL=$(kubectl get ingress -n ${{ env.K8S_NAMESPACE }} -o jsonpath='{.items[0].spec.rules[0].host}' 2>/dev/null || echo "No ingress found")
+        if [ "${INGRESS_URL}" != "No ingress found" ]; then
+          echo "🌐 Application is available at: https://${INGRESS_URL}"
+        fi
+
+    - name: Output deployment details
+      run: |
+        echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Environment**: ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image Tag**: ${{ steps.image-tag.outputs.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image**: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ steps.image-tag.outputs.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Namespace**: ${{ env.K8S_NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Cluster**: ${{ env.EKS_CLUSTER_NAME }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
