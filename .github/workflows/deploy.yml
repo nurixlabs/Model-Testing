@@ -30,7 +30,7 @@ env:
   EKS_CLUSTER_NAME: prod-eks-cluster
   K8S_NAMESPACE: asr-dashboard
   K8S_DEPLOYMENT_NAME: asr-dashboard
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  AWS_ACCOUNT_ID: 533266975263
 
 jobs:
   build-and-deploy:
