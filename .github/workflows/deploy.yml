@@ -1,6 +1,9 @@
 name: Build and Deploy ASR Dashboard
 
 on:
+  push:
+    branches:
+      - stage
   workflow_dispatch:
     inputs:
       environment:
@@ -17,12 +20,17 @@ on:
         default: false
         type: boolean
 
+permissions:
+  id-token: write
+  contents: read
+
 env:
   AWS_REGION: ap-south-1
   ECR_REPOSITORY: asr/dashboard
   EKS_CLUSTER_NAME: prod-eks-cluster
   K8S_NAMESPACE: asr-dashboard
   K8S_DEPLOYMENT_NAME: asr-dashboard
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
 
 jobs:
   build-and-deploy:
@@ -35,8 +43,7 @@ jobs:
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/github-actions-role
         aws-region: ${{ env.AWS_REGION }}
 
     - name: Login to Amazon ECR
