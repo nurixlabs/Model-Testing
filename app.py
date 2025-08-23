@@ -133,8 +133,8 @@ def merge_available_models_with_results(stt_data):
     """Merge available standard models with existing test results."""
     merged_data = stt_data.copy()
     
-    # Add custom CSV datasets
-    for csv_hash, csv_info in csv_datasets.items():
+    # Add custom CSV datasets with language-specific keys
+    for lang_csv_hash, csv_info in csv_datasets.items():
         lang = csv_info['language']
         dataset_key = csv_info['dataset_key']
         
@@ -144,7 +144,7 @@ def merge_available_models_with_results(stt_data):
                 'dataset': csv_info['dataset_name'],
                 'models': csv_info.get('models', []),
                 'is_custom': True,
-                'csv_hash': csv_hash,
+                'csv_hash': lang_csv_hash,
                 'language': lang
             }
     
@@ -166,11 +166,15 @@ def get_model_key_from_display_name(display_name):
         'Whisper Large v2': 'whisper',
         'Whisper': 'whisper',
         'Google STT': 'google',
+        'Google STT v1': 'google',
         'Google STT v2': 'google_v2',
+        'Gemini 2.5 Pro': 'gemini',
         'AWS STT': 'aws',
+        'AZURE STT': 'azure',
         'Salad': 'salad',
         'Deepgram Nova 3': 'deepgram_nova3',
         'Deepgram Nova 2': 'deepgram_nova2',
+        'Sarvam': 'sarvam',
         'SARVAM': 'sarvam',
         'Gladia': 'gladia',
         'AZURE': 'azure',
@@ -183,7 +187,7 @@ def get_model_key_from_display_name(display_name):
     }
     return name_to_key.get(display_name, display_name.lower().replace(' ', '_'))
 
-def process_pipeline_results(language, model_name, output_dir, csv_hash, dataset_name, model_key):
+def process_pipeline_results(language, model_name, output_dir, csv_hash, dataset_name, model_key, is_default_dataset=False):
     """Process pipeline results and update STT data"""
     global current_stt_data, csv_datasets
     
@@ -280,9 +284,7 @@ def process_pipeline_results(language, model_name, output_dir, csv_hash, dataset
         'name': model_name,
         'streaming': STANDARD_MODELS.get(model_key, {}).get('streaming', False),
         'cost_batch': 'Tested',
-        'cost_streaming': 'Tested',
-        'latency_batch': 2.0,  # Placeholder
-        'latency_streaming': 0.5 if STANDARD_MODELS.get(model_key, {}).get('streaming', False) else None
+        'cost_streaming': 'Tested'
     }
     
     if language == 'english':
@@ -304,13 +306,20 @@ def process_pipeline_results(language, model_name, output_dir, csv_hash, dataset
             'cer': metrics.get('avg_cer', 0)
         })
     
-    # Create dataset key for this CSV
-    dataset_key = f"csv_{csv_hash[:8]}"
+    # Handle default dataset differently
+    if is_default_dataset and language == 'hinglish':
+        # For default dataset, update the main language entry
+        dataset_key = 'hinglish'
+        lang_csv_hash = None  # Don't track in csv_datasets
+    else:
+        # Create language-specific dataset key for custom CSV
+        dataset_key = f"{language}_csv_{csv_hash[:8]}"
+        lang_csv_hash = f"{language}_{csv_hash}"
     
-    # Update CSV tracking
-    if csv_hash in csv_datasets:
+    # Update CSV tracking with language-specific key (only for custom datasets)
+    if lang_csv_hash and lang_csv_hash in csv_datasets:
         # Update existing entry
-        existing_models = csv_datasets[csv_hash].get('models', [])
+        existing_models = csv_datasets[lang_csv_hash].get('models', [])
         model_found = False
         for idx, existing_model in enumerate(existing_models):
             if existing_model['name'] == model_name:
@@ -319,10 +328,10 @@ def process_pipeline_results(language, model_name, output_dir, csv_hash, dataset
                 break
         if not model_found:
             existing_models.append(model_entry)
-        csv_datasets[csv_hash]['models'] = existing_models
-    else:
-        # Create new entry
-        csv_datasets[csv_hash] = {
+        csv_datasets[lang_csv_hash]['models'] = existing_models
+    elif lang_csv_hash:
+        # Create new entry (only for custom datasets)
+        csv_datasets[lang_csv_hash] = {
             'dataset_key': dataset_key,
             'dataset_name': dataset_name,
             'language': language,
@@ -350,21 +359,7 @@ def process_pipeline_results(language, model_name, output_dir, csv_hash, dataset
     if not model_found:
         current_stt_data[dataset_key]['models'].append(model_entry)
     
-    # Also update in the existing language section if exists
-    if language in current_stt_data:
-        # Add to standard language section with dataset indicator
-        model_entry_copy = model_entry.copy()
-        model_entry_copy['dataset_source'] = dataset_name
-        
-        model_found = False
-        for idx, model in enumerate(current_stt_data[language]['models']):
-            if model['name'] == model_name and model.get('dataset_source') == dataset_name:
-                current_stt_data[language]['models'][idx] = model_entry_copy
-                model_found = True
-                break
-        
-        if not model_found:
-            current_stt_data[language]['models'].append(model_entry_copy)
+    # Do NOT update in the standard language section - keep datasets separate
     
     # Save updated data
     save_stt_data(current_stt_data)
@@ -381,48 +376,65 @@ def get_results():
 
 @app.route('/api/available-models', methods=['GET'])
 def get_available_models():
-    """Get list of available models for a language."""
-    language = request.args.get('language', 'english')
+    """Get list of available models for testing."""
+    # Fixed list of models available for all languages
+    fixed_models = [
+        {'key': 'deepgram_nova3', 'display_name': 'Deepgram Nova 3', 'streaming': True},
+        {'key': 'deepgram_nova2', 'display_name': 'Deepgram Nova 2', 'streaming': True},
+        {'key': 'whisper', 'display_name': 'Whisper', 'streaming': False},
+        {'key': 'google_v2', 'display_name': 'Google STT v2', 'streaming': True},
+        {'key': 'aws', 'display_name': 'AWS STT', 'streaming': True},
+        {'key': 'azure', 'display_name': 'AZURE STT', 'streaming': True},
+        {'key': 'gladia', 'display_name': 'Gladia', 'streaming': True},
+        {'key': 'assemblyai', 'display_name': 'AssemblyAI', 'streaming': True},
+        {'key': 'sarvam', 'display_name': 'Sarvam', 'streaming': True}
+    ]
     
-    available = []
-    for model_key, model_info in STANDARD_MODELS.items():
-        if language in model_info.get('languages', []):
-            available.append({
-                'key': model_key,
-                'display_name': model_info['display_name'],
-                'streaming': model_info.get('streaming', False)
-            })
-    
-    return jsonify({'models': available})
+    return jsonify({'models': fixed_models})
 
 @app.route('/api/test-csv', methods=['POST'])
 def test_csv():
     """Test a model on CSV dataset using actual pipelines"""
     try:
-        if 'csv' not in request.files:
-            return jsonify({'error': 'No CSV file provided'}), 400
-        
-        csv_file = request.files['csv']
-        model_name = request.form.get('model')
+        # Check if using default dataset for Hinglish
+        use_default = request.form.get('use_default') == 'true'
         language = request.form.get('language', 'english')
-        dataset_name = request.form.get('dataset_name', f'custom_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+        model_name = request.form.get('model')
         
         if not model_name:
             return jsonify({'error': 'No model selected'}), 400
         
-        # Save CSV file
-        csv_filename = secure_filename(csv_file.filename)
-        csv_path = os.path.join(UPLOAD_FOLDER, f"{time.time()}_{csv_filename}")
-        csv_file.save(csv_path)
+        if use_default and language == 'hinglish':
+            # Use the default Hinglish dataset
+            csv_path = os.path.join('datasets', 'hinglish.csv')
+            dataset_name = 'hinglish'  # This will update the main hinglish dataset in sttData.json
+            
+            if not os.path.exists(csv_path):
+                return jsonify({'error': 'Default Hinglish dataset not found at datasets/hinglish.csv'}), 404
+        else:
+            # Handle uploaded CSV
+            if 'csv' not in request.files:
+                return jsonify({'error': 'No CSV file provided'}), 400
+            
+            csv_file = request.files['csv']
+            dataset_name = request.form.get('dataset_name', f'custom_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+            
+            # Save CSV file
+            csv_filename = secure_filename(csv_file.filename)
+            csv_path = os.path.join(UPLOAD_FOLDER, f"{time.time()}_{csv_filename}")
+            csv_file.save(csv_path)
         
         # Get CSV hash to track duplicates
         csv_hash = get_csv_hash(csv_path)
         
-        # Check if this CSV was processed before
-        existing_dataset = csv_datasets.get(csv_hash)
+        # Create language-specific hash
+        lang_csv_hash = f"{language}_{csv_hash}"
+        
+        # Check if this CSV was processed before for this language
+        existing_dataset = csv_datasets.get(lang_csv_hash)
         if existing_dataset:
             dataset_name = existing_dataset['dataset_name']
-            logger.info(f"CSV already processed before as: {dataset_name}")
+            logger.info(f"CSV already processed before for {language} as: {dataset_name}")
         
         # Create task ID
         task_id = f"{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -433,7 +445,8 @@ def test_csv():
             'progress': 0,
             'dataset_name': dataset_name,
             'started': datetime.now().isoformat(),
-            'csv_hash': csv_hash
+            'csv_hash': csv_hash,
+            'language': language
         }
         
         # Get model key from display name
@@ -503,13 +516,15 @@ def test_csv():
                 running_tasks[task_id]['progress'] = 80
                 
                 # Process results and update STT data
+                is_default = use_default and language == 'hinglish'
                 metrics = process_pipeline_results(
                     language, 
                     model_name, 
                     output_dir, 
                     csv_hash,
                     dataset_name,
-                    model_key
+                    model_key,
+                    is_default_dataset=is_default
                 )
                 
                 running_tasks[task_id]['progress'] = 100
@@ -614,8 +629,8 @@ def test_audio():
                         logger.warning(f"No transcription returned from {model_display_name}")
                         transcription = "No transcription returned"
                 else:
-                    # Fallback mock transcription
-                    transcription = f"Model not available: {model_display_name}"
+                    # Model not available
+                    raise Exception("Model not available. Please ensure models are properly configured.")
                 
                 processing_time = time.time() - start_time
                 

@@ -24,9 +24,10 @@ const STTDashboard = () => {
     hinglish: { dataset: 'Loading...', models: [] }
   });
   const [refreshKey, setRefreshKey] = useState(0);
+  const [availableTestModels, setAvailableTestModels] = useState([]);
 
   // Load STT data from backend
-  const loadData = () => {
+  const loadData = React.useCallback(() => {
     console.log('Fetching data from backend...');
     fetch('/api/results')
       .then(res => {
@@ -39,10 +40,12 @@ const STTDashboard = () => {
         console.log('Data received:', data);
         setSttData(data);
         
-        // Extract custom datasets
-        const customKeys = Object.keys(data).filter(key => 
-          key.startsWith('csv_') || (data[key].is_custom === true)
-        );
+        // Extract custom datasets for the current language
+        const customKeys = Object.keys(data).filter(key => {
+          const dataset = data[key];
+          return (dataset.is_custom === true || key.includes('_csv_')) && 
+                 dataset.language === selectedLanguage;
+        });
         setCustomDatasets(customKeys);
       })
       .catch(err => {
@@ -56,14 +59,33 @@ const STTDashboard = () => {
           hinglish: { dataset: 'Backend not connected', models: [] }
         });
       });
+  }, [selectedLanguage]);
+
+  // Load available models for testing
+  const loadAvailableModels = () => {
+    fetch('/api/available-models')
+      .then(res => res.json())
+      .then(data => {
+        setAvailableTestModels(data.models || []);
+      })
+      .catch(err => {
+        console.error('Error loading available models:', err);
+        // Fallback to hardcoded list if API fails
+        setAvailableTestModels([
+          'Deepgram Nova 3', 'Deepgram Nova 2', 'Whisper', 
+          'Google STT v2', 'AWS STT', 'AZURE STT', 
+          'Gladia', 'AssemblyAI', 'Sarvam'
+        ]);
+      });
   };
 
   useEffect(() => {
     loadData();
+    loadAvailableModels();
     // Poll for updates every 5 seconds
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-  }, [refreshKey]);
+  }, [refreshKey, selectedLanguage]);
 
   // Get current data based on selected dataset
   const currentData = useMemo(() => {
@@ -148,18 +170,23 @@ const STTDashboard = () => {
 
   const startCsvTesting = async () => {
     if (!uploadedFile || !selectedTestModel) {
-      alert('Please upload a CSV file and select a model');
+      alert('Please select a dataset and a model');
       return;
     }
     
-    setShowTestingModal(true);
-    setTestingProgress(0);
-    
     const formData = new FormData();
-    formData.append('csv', uploadedFile);
+    
+    // Handle default dataset for Hinglish
+    if (uploadedFile === 'default-hinglish') {
+      formData.append('use_default', 'true');
+      formData.append('dataset_name', 'Default Hinglish Dataset');
+    } else {
+      formData.append('csv', uploadedFile);
+      formData.append('dataset_name', `CSV: ${uploadedFile.name.replace('.csv', '')}`);
+    }
+    
     formData.append('model', selectedTestModel);
     formData.append('language', selectedLanguage);
-    formData.append('dataset_name', `CSV: ${uploadedFile.name.replace('.csv', '')}`);
     
     try {
       const response = await fetch('/api/test-csv', {
@@ -170,7 +197,76 @@ const STTDashboard = () => {
       const result = await response.json();
       
       if (result.task_id) {
-        // Poll for progress
+        // Test started successfully - show notification and close modal
+        const datasetName = uploadedFile === 'default-hinglish' ? 
+          'Default Hinglish Dataset' : 
+          uploadedFile.name;
+        
+        // Show success notification
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          color: white;
+          padding: 1rem 1.5rem;
+          border-radius: 12px;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+          z-index: 10000;
+          animation: slideIn 0.3s ease-out;
+          font-weight: 500;
+        `;
+        notification.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span style="font-size: 1.5rem;">✅</span>
+            <div>
+              <div style="font-weight: 600; margin-bottom: 0.25rem;">Test Started Successfully!</div>
+              <div style="opacity: 0.9; font-size: 0.9rem;">
+                Testing ${selectedTestModel} on ${datasetName}
+              </div>
+              <div style="opacity: 0.8; font-size: 0.85rem; margin-top: 0.25rem;">
+                Results will appear in the All Models tab once completed
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(notification);
+        
+        // Add animation
+        const style = document.createElement('style');
+        style.textContent = `
+          @keyframes slideIn {
+            from { transform: translateX(400px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+          }
+        `;
+        document.head.appendChild(style);
+        
+        // Remove notification after 5 seconds
+        setTimeout(() => {
+          notification.style.animation = 'slideOut 0.3s ease-in forwards';
+          setTimeout(() => {
+            document.body.removeChild(notification);
+            document.head.removeChild(style);
+          }, 300);
+        }, 5000);
+        
+        // Add slide out animation
+        const styleOut = document.createElement('style');
+        styleOut.textContent = `
+          @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(400px); opacity: 0; }
+          }
+        `;
+        document.head.appendChild(styleOut);
+        
+        // Reset form
+        setUploadedFile(null);
+        setSelectedTestModel('');
+        
+        // Optional: Poll for completion in background (without modal)
         const pollInterval = setInterval(async () => {
           const statusRes = await fetch(`/api/task/${result.task_id}`);
           const status = await statusRes.json();
@@ -181,29 +277,122 @@ const STTDashboard = () => {
           
           if (status.status === 'completed') {
             clearInterval(pollInterval);
-            setTestingProgress(100);
+            
+            // Show completion notification
+            const completionNotification = document.createElement('div');
+            completionNotification.style.cssText = `
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+              color: white;
+              padding: 1rem 1.5rem;
+              border-radius: 12px;
+              box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+              z-index: 10000;
+              animation: slideIn 0.3s ease-out;
+            `;
+            completionNotification.innerHTML = `
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span style="font-size: 1.5rem;">🎉</span>
+                <div>
+                  <div style="font-weight: 600;">Testing Completed!</div>
+                  <div style="opacity: 0.9; font-size: 0.9rem;">
+                    Results have been added to the All Models tab
+                  </div>
+                </div>
+              </div>
+            `;
+            document.body.appendChild(completionNotification);
+            
+            // Remove after 4 seconds
+            setTimeout(() => {
+              completionNotification.style.animation = 'slideOut 0.3s ease-in forwards';
+              setTimeout(() => {
+                document.body.removeChild(completionNotification);
+              }, 300);
+            }, 4000);
             
             // Reload data to include new dataset
             setRefreshKey(prev => prev + 1);
             
-            setTimeout(() => {
-              setShowTestingModal(false);
-              alert('Testing completed! Results added to datasets.');
-              // Reset form
-              setUploadedFile(null);
-              setSelectedTestModel('');
-            }, 1000);
           } else if (status.status === 'failed') {
             clearInterval(pollInterval);
-            setShowTestingModal(false);
-            alert(`Testing failed: ${status.error || 'Unknown error'}`);
+            
+            // Show error notification
+            const errorNotification = document.createElement('div');
+            errorNotification.style.cssText = `
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+              color: white;
+              padding: 1rem 1.5rem;
+              border-radius: 12px;
+              box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+              z-index: 10000;
+              animation: slideIn 0.3s ease-out;
+            `;
+            errorNotification.innerHTML = `
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span style="font-size: 1.5rem;">❌</span>
+                <div>
+                  <div style="font-weight: 600;">Testing Failed</div>
+                  <div style="opacity: 0.9; font-size: 0.9rem;">
+                    ${status.error || 'An unexpected error occurred'}
+                  </div>
+                </div>
+              </div>
+            `;
+            document.body.appendChild(errorNotification);
+            
+            // Remove after 5 seconds
+            setTimeout(() => {
+              errorNotification.style.animation = 'slideOut 0.3s ease-in forwards';
+              setTimeout(() => {
+                document.body.removeChild(errorNotification);
+              }, 300);
+            }, 5000);
           }
         }, 2000);
       }
     } catch (error) {
       console.error('Error:', error);
-      alert('Error starting test');
-      setShowTestingModal(false);
+      
+      // Show error notification
+      const errorNotification = document.createElement('div');
+      errorNotification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        padding: 1rem 1.5rem;
+        border-radius: 12px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        z-index: 10000;
+        animation: slideIn 0.3s ease-out;
+      `;
+      errorNotification.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <span style="font-size: 1.5rem;">❌</span>
+          <div>
+            <div style="font-weight: 600;">Error Starting Test</div>
+            <div style="opacity: 0.9; font-size: 0.9rem;">
+              ${error.message || 'Failed to start the test. Please try again.'}
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(errorNotification);
+      
+      // Remove after 5 seconds
+      setTimeout(() => {
+        errorNotification.style.animation = 'slideOut 0.3s ease-in forwards';
+        setTimeout(() => {
+          document.body.removeChild(errorNotification);
+        }, 300);
+      }, 5000);
     }
   };
 
@@ -311,7 +500,11 @@ const STTDashboard = () => {
         }}>
           <h4 style={{ margin: '0 0 1rem', color: '#1f2937' }}>🤖 Select Models to Compare</h4>
           <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-            {availableModels.map(model => (
+            {(availableTestModels.length > 0 ? 
+              availableTestModels.map(m => typeof m === 'string' ? m : m.display_name) : 
+              ['Deepgram Nova 3', 'Deepgram Nova 2', 'Whisper', 'Google STT v2', 
+               'AWS STT', 'AZURE STT', 'Gladia', 'AssemblyAI', 'Sarvam']
+            ).map(model => (
               <label key={model} style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -419,32 +612,106 @@ const STTDashboard = () => {
         marginBottom: '1.5rem',
         border: '2px dashed #e2e8f0'
       }}>
-        <h4 style={{ margin: '0 0 1rem', color: '#1f2937' }}>📄 Upload CSV File</h4>
-        <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
-          CSV should have columns: Key/audio_path and Transcription/ground_truth
-        </p>
-        <input
-          type="file"
-          accept=".csv"
-          onChange={handleFileUpload}
-          style={{ display: 'none' }}
-          id="csv-upload"
-        />
-        <label
-          htmlFor="csv-upload"
-          style={{
-            display: 'inline-block',
-            padding: '0.75rem 1.5rem',
-            background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-            color: 'white',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontWeight: '500'
-          }}
-        >
-          Choose CSV File
-        </label>
-        {uploadedFile && (
+        <h4 style={{ margin: '0 0 1rem', color: '#1f2937' }}>📄 Select Dataset</h4>
+        
+        {/* Add Default Dataset option for Hinglish */}
+        {selectedLanguage === 'hinglish' && (
+          <div style={{ marginBottom: '1.5rem' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0.75rem',
+              background: uploadedFile === 'default-hinglish' ? '#dbeafe' : '#f3f4f6',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              marginBottom: '0.5rem',
+              border: uploadedFile === 'default-hinglish' ? '2px solid #3b82f6' : '2px solid transparent'
+            }}>
+              <input
+                type="radio"
+                name="datasetSource"
+                value="default"
+                checked={uploadedFile === 'default-hinglish'}
+                onChange={() => setUploadedFile('default-hinglish')}
+                style={{ marginRight: '0.75rem' }}
+              />
+              <div>
+                <span style={{ fontWeight: '600', color: '#1f2937' }}>Use Default Hinglish Dataset</span>
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>
+                  Pre-loaded dataset for testing Hinglish models
+                </p>
+              </div>
+            </label>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0.75rem',
+              background: uploadedFile && uploadedFile !== 'default-hinglish' ? '#dbeafe' : '#f3f4f6',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              border: uploadedFile && uploadedFile !== 'default-hinglish' ? '2px solid #3b82f6' : '2px solid transparent'
+            }}>
+              <input
+                type="radio"
+                name="datasetSource"
+                value="custom"
+                checked={uploadedFile && uploadedFile !== 'default-hinglish'}
+                onChange={() => setUploadedFile(null)}
+                style={{ marginRight: '0.75rem' }}
+              />
+              <div>
+                <span style={{ fontWeight: '600', color: '#1f2937' }}>Upload Custom CSV</span>
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.875rem', color: '#6b7280' }}>
+                  Upload your own CSV file for testing
+                </p>
+              </div>
+            </label>
+          </div>
+        )}
+        
+        {/* Show file upload section */}
+        {(selectedLanguage !== 'hinglish' || uploadedFile !== 'default-hinglish') && (
+          <>
+            <p style={{ color: '#6b7280', marginBottom: '1rem' }}>
+              CSV should have columns: Key/audio_path and Transcription/ground_truth
+            </p>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileUpload}
+              style={{ display: 'none' }}
+              id="csv-upload"
+            />
+            <label
+              htmlFor="csv-upload"
+              style={{
+                display: 'inline-block',
+                padding: '0.75rem 1.5rem',
+                background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                color: 'white',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontWeight: '500'
+              }}
+            >
+              Choose CSV File
+            </label>
+            {uploadedFile && uploadedFile !== 'default-hinglish' && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '0.75rem',
+                background: '#f0fdf4',
+                borderRadius: '8px',
+                border: '1px solid #bbf7d0'
+              }}>
+                <span style={{ color: '#16a34a' }}>✅ {uploadedFile.name}</span>
+              </div>
+            )}
+          </>
+        )}
+        
+        {/* Show confirmation for default dataset */}
+        {uploadedFile === 'default-hinglish' && (
           <div style={{
             marginTop: '1rem',
             padding: '0.75rem',
@@ -452,7 +719,7 @@ const STTDashboard = () => {
             borderRadius: '8px',
             border: '1px solid #bbf7d0'
           }}>
-            <span style={{ color: '#16a34a' }}>✅ {uploadedFile.name}</span>
+            <span style={{ color: '#16a34a' }}>✅ Default Hinglish Dataset Selected</span>
           </div>
         )}
       </div>
@@ -477,7 +744,11 @@ const STTDashboard = () => {
           }}
         >
           <option value="">Choose a model to test...</option>
-          {availableModels.map(model => (
+          {(availableTestModels.length > 0 ? 
+            availableTestModels.map(m => typeof m === 'string' ? m : m.display_name) : 
+            ['Deepgram Nova 3', 'Deepgram Nova 2', 'Whisper', 'Google STT v2', 
+             'AWS STT', 'AZURE STT', 'Gladia', 'AssemblyAI', 'Sarvam']
+          ).map(model => (
             <option key={model} value={model}>{model}</option>
           ))}
         </select>
@@ -513,14 +784,13 @@ const STTDashboard = () => {
           padding: '1.5rem',
           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
         }}>
-          <h4 style={{ margin: '0 0 1rem', color: '#1f2937' }}>📂 Processed CSV Datasets</h4>
+          <h4 style={{ margin: '0 0 1rem', color: '#1f2937' }}>📂 Processed CSV Datasets for {selectedLanguage}</h4>
           <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
             {customDatasets.map((datasetKey, idx) => {
               const dataset = sttData[datasetKey];
               return (
                 <li key={idx} style={{ color: '#6b7280', marginBottom: '0.5rem' }}>
                   {dataset?.dataset || datasetKey} 
-                  {dataset?.language && ` (${dataset.language})`}
                   {dataset?.models?.length > 0 && ` - ${dataset.models.length} model(s) tested`}
                 </li>
               );
@@ -812,7 +1082,7 @@ const STTDashboard = () => {
               <option value="default">Default ({selectedLanguage})</option>
             </optgroup>
             {customDatasets.length > 0 && (
-              <optgroup label="Custom CSV Datasets">
+              <optgroup label={`Custom CSV Datasets (${selectedLanguage})`}>
                 {customDatasets.map(datasetKey => {
                   const dataset = sttData[datasetKey];
                   return (

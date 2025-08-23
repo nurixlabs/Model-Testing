@@ -126,8 +126,8 @@ MODEL_CONFIGS = {
         'language_code': 'hi-IN',
         'max_concurrent_jobs': 90,
         'output_prefix': 'transcripts',
-        'region': 'us-east-1',
-        's3_region': 'us-east-1',
+        'region': 'ap-south-1',
+        's3_region': 'ap-south-1',
     },
     'salad': {
         'organization': 'nurix-ai',
@@ -184,8 +184,8 @@ MODEL_CONFIGS = {
         'auto_highlights': False,
     },
     'azure': {
-        'subscription_key': os.getenv('AZURE_SPEECH_KEY'),
-        'region': 'southeastasia',
+        'subscription_key': os.environ.get('AZURE_SPEECH_KEY') or os.getenv('AZURE_SPEECH_KEY'),
+        'region': os.environ.get('AZURE_SPEECH_REGION') or os.getenv('AZURE_SPEECH_REGION'),
         'language': 'en-IN',  # Default to Indian English
         'enable_word_timing': True,
         'enable_punctuation': True,

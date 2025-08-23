@@ -2,12 +2,17 @@
 Google Speech-to-Text Chirp 2 Model Implementation
 """
 import os
+import sys
 import tempfile
 import logging
 from models.base_model import BaseModel
 from google.cloud import speech_v2
 from google.api_core.client_options import ClientOptions
 from pydub import AudioSegment
+
+# Add parent directory to path to import google_utils
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from google_utils.google_credentials import get_google_credentials, setup_google_environment
 
 
 
@@ -25,10 +30,9 @@ class GoogleChirp2Model(BaseModel):
         self.model = config.get('model', 'chirp_2')
         self.enable_punctuation = config.get('enable_punctuation', True)
         
-        # Set credentials path if provided in config
-        credentials_path = config.get('credentials_path')
-        if credentials_path:
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+        # Set up Google credentials from environment
+        setup_google_environment()
+        self.credentials = get_google_credentials()
     
     def load(self):
         """Initialize the Google Speech-to-Text client."""
@@ -37,9 +41,17 @@ class GoogleChirp2Model(BaseModel):
         logging.info(f"Model: {self.model}, Languages: {self.language_codes}")
         
         try:
-            self.client = speech_v2.SpeechClient(
-                client_options=ClientOptions(api_endpoint=self.api_endpoint)
-            )
+            # Create client with credentials if available
+            if self.credentials:
+                self.client = speech_v2.SpeechClient(
+                    credentials=self.credentials,
+                    client_options=ClientOptions(api_endpoint=self.api_endpoint)
+                )
+            else:
+                # Fall back to default credentials
+                self.client = speech_v2.SpeechClient(
+                    client_options=ClientOptions(api_endpoint=self.api_endpoint)
+                )
             self.recognizer = self.client.recognizer_path(
                 self.project_id, self.location, "_"
             )

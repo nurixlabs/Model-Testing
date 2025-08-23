@@ -9,6 +9,7 @@ import azure.cognitiveservices.speech as speechsdk
 from models.base_model import BaseModel
 
 
+
 class AzureModel(BaseModel):
     """Azure Speech Services STT implementation."""
 
@@ -16,7 +17,7 @@ class AzureModel(BaseModel):
         super().__init__(config)
         self.name = "azure"
         self.subscription_key = config.get('subscription_key', os.environ.get('AZURE_SPEECH_KEY'))
-        self.region = config.get('region', 'southeastasia')
+        self.region = config.get('region', os.environ.get('AZURE_SPEECH_REGION'))
         self.language = config.get('language', 'en-IN')
         self.enable_word_timing = config.get('enable_word_timing', True)
         self.enable_punctuation = config.get('enable_punctuation', True)
@@ -139,3 +140,52 @@ class AzureModel(BaseModel):
         except Exception as e:
             logging.error(f"Error transcribing with Azure: {e}")
             return {"text": "", "error": str(e)}
+        
+# if __name__ == "__main__":
+#     import argparse
+#     import logging
+#     from dotenv import load_dotenv
+#     load_dotenv(dotenv_path='/Users/administrator/Desktop/Model-Testing/.env')
+#     parser = argparse.ArgumentParser(description="Test AzureModel on a single audio file")
+#     parser.add_argument("audio_path", help="Path to the audio file to transcribe")
+#     parser.add_argument("--key", help="Azure Speech subscription key (optional)")
+#     parser.add_argument("--region", help="Azure Speech region (optional)")
+#     parser.add_argument("--language", help="Language code (like en-IN)", default=None)
+#     args = parser.parse_args()
+
+#     logging.basicConfig(level=logging.INFO)
+
+#     # Only add config values if they are provided as arguments
+#     config = {}
+#     if args.key:
+#         config["subscription_key"] = args.key
+#     if args.region:
+#         config["region"] = args.region
+#     if args.language:
+#         config["language"] = args.language
+#     model = AzureModel(config)
+
+#     try:
+#         model.load()
+#     except Exception as e:
+#         logging.error(f"Failed to initialize AzureModel: {e}")
+#         exit(1)
+
+#     logging.info(f"Transcribing file: {args.audio_path}")
+#     result = model.transcribe(args.audio_path, language=args.language)
+
+#     if result.get("error"):
+#         logging.error(f"Transcription failed: {result['error']}")
+#     else:
+#         print("\n===== TRANSCRIPTION RESULT =====\n")
+#         print(f"Language Used: {result.get('language_used', 'N/A')}\n")
+#         print("Transcribed Text:\n")
+#         print(result.get("text", ""))
+
+#         chunks = result.get("chunks", [])
+#         if chunks:
+#             print("\nWord-Level Timings (first 10 words):")
+#             for w in chunks[:10]:
+#                 print(f"{w['word']} — start: {w['start_time']:.2f}s, end: {w['end_time']:.2f}s, confidence: {w.get('confidence', 'N/A')}")
+
+#     logging.info("Done.")

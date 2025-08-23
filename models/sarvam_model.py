@@ -18,7 +18,10 @@ class SarvamModel(BaseModel):
         self.client = None
         self.api_key = config.get('api_key', os.environ.get('SARVAM_API_KEY'))
         self.model = config.get('model', 'saarika:v2')
-        self.language_code = config.get('language_code', 'mr-IN')
+        
+        # Map language codes to Sarvam's expected format
+        raw_language_code = config.get('language_code', 'mr-IN')
+        self.language_code = self._map_language_code(raw_language_code)
         
         # Rate limiting configuration
         self.max_retries = config.get('max_retries', 5)
@@ -27,6 +30,46 @@ class SarvamModel(BaseModel):
         self.jitter = config.get('jitter', 0.1)
         self.requests_per_minute = config.get('requests_per_minute', None)
         self.last_request_time = 0
+    
+    def _map_language_code(self, code):
+        """Map common language codes to Sarvam's expected format."""
+        # Sarvam accepts: 'unknown', 'hi-IN', 'bn-IN', 'kn-IN', 'ml-IN', 'mr-IN', 
+        # 'od-IN', 'pa-IN', 'ta-IN', 'te-IN', 'en-IN', 'gu-IN'
+        
+        mapping = {
+            'en-US': 'en-IN',
+            'en': 'en-IN',
+            'english': 'en-IN',
+            'hi': 'hi-IN',
+            'hindi': 'hi-IN',
+            'hinglish': 'hi-IN',
+            'mr': 'mr-IN',
+            'marathi': 'mr-IN',
+            'bn': 'bn-IN',
+            'bengali': 'bn-IN',
+            'kn': 'kn-IN',
+            'kannada': 'kn-IN',
+            'ml': 'ml-IN',
+            'malayalam': 'ml-IN',
+            'od': 'od-IN',
+            'odia': 'od-IN',
+            'pa': 'pa-IN',
+            'punjabi': 'pa-IN',
+            'ta': 'ta-IN',
+            'tamil': 'ta-IN',
+            'te': 'te-IN',
+            'telugu': 'te-IN',
+            'gu': 'gu-IN',
+            'gujarati': 'gu-IN'
+        }
+        
+        # If already in correct format, return as is
+        if code in ['unknown', 'hi-IN', 'bn-IN', 'kn-IN', 'ml-IN', 'mr-IN', 
+                    'od-IN', 'pa-IN', 'ta-IN', 'te-IN', 'en-IN', 'gu-IN']:
+            return code
+        
+        # Map or default to unknown
+        return mapping.get(code, 'unknown')
     
     def load(self):
         """Initialize the Sarvam client."""
@@ -83,15 +126,28 @@ class SarvamModel(BaseModel):
                         language_code=self.language_code
                     )
                 
-                # Process response
-                if isinstance(response, dict):
-                    transcript = response.get('text', '')
-                    confidence = response.get('confidence', 0)
-                    
-                    # Convert chunks to standardized format
+                # Process response - Sarvam returns an object with transcript attribute
+                if hasattr(response, 'transcript'):
+                    transcript = response.transcript
                     chunks = []
-                    raw_chunks = response.get('words', [])
+                    confidence = 0
                     
+                    # If timestamps are available, process them
+                    if hasattr(response, 'timestamps') and response.timestamps:
+                        for timestamp in response.timestamps:
+                            chunks.append({
+                                'word': timestamp.get('word', ''),
+                                'start_time': timestamp.get('start_time', 0),
+                                'end_time': timestamp.get('end_time', 0),
+                                'confidence': timestamp.get('confidence', 0),
+                                'punctuated_word': timestamp.get('word', '')
+                            })
+                elif isinstance(response, dict):
+                    transcript = response.get('transcript', response.get('text', ''))
+                    confidence = response.get('confidence', 0)
+                    chunks = []
+                    
+                    raw_chunks = response.get('words', response.get('timestamps', []))
                     for chunk in raw_chunks:
                         chunks.append({
                             'word': chunk.get('word', ''),

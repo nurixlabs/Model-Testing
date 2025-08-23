@@ -198,6 +198,7 @@ $RECYCLE.BIN/
 nemo_model/
 transcription_results/
 NeMo/
+temp_uploads/
 
 # Audio files
 *.wav

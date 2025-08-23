@@ -81,32 +81,6 @@
         "latency_batch": 0.157,
         "latency_streaming": 0.16,
         "streaming": true
-      },
-      {
-        "name": "Deepgram Nova 3",
-        "streaming": true,
-        "cost_batch": "Tested",
-        "cost_streaming": "Tested",
-        "latency_batch": 2.0,
-        "latency_streaming": 0.5,
-        "wer_clean": 0,
-        "cer_clean": 0,
-        "wer_other": 0.0,
-        "cer_other": 0.0,
-        "dataset_source": "CSV: test_rashi"
-      },
-      {
-        "name": "Whisper Large v2",
-        "streaming": false,
-        "cost_batch": "Tested",
-        "cost_streaming": "Tested",
-        "latency_batch": 2.0,
-        "latency_streaming": null,
-        "wer_clean": 0,
-        "cer_clean": 0,
-        "wer_other": 0.0,
-        "cer_other": 0.0,
-        "dataset_source": "CSV: test_rashi"
       }
     ]
   },
@@ -164,16 +138,6 @@
         "latency_batch": 2.1,
         "latency_streaming": 0.8,
         "streaming": true
-      },
-      {
-        "name": "AWS STT",
-        "streaming": true,
-        "cost_batch": "Tested",
-        "cost_streaming": "Tested",
-        "latency_batch": 2.0,
-        "latency_streaming": 0.5,
-        "score": 3.0,
-        "dataset_source": "CSV: test_rashi"
       }
     ]
   },
@@ -272,7 +236,7 @@
       }
     ]
   },
-  "csv_27669989": {
+  "english_csv_27669989": {
     "dataset": "CSV: test_rashi",
     "models": [
       {
@@ -280,8 +244,6 @@
         "streaming": true,
         "cost_batch": "Tested",
         "cost_streaming": "Tested",
-        "latency_batch": 2.0,
-        "latency_streaming": 0.5,
         "wer_clean": 0,
         "cer_clean": 0,
         "wer_other": 0.0,
@@ -307,9 +269,35 @@
         "cer_clean": 0,
         "wer_other": 0.0,
         "cer_other": 0.0
+      },
+      {
+        "name": "Google STT v2",
+        "streaming": true,
+        "cost_batch": "Tested",
+        "cost_streaming": "Tested",
+        "wer_clean": 0,
+        "cer_clean": 0,
+        "wer_other": 0.0,
+        "cer_other": 0.0
       }
     ],
     "is_custom": true,
     "language": "english"
+  },
+  "hinglish_csv_27669989": {
+    "dataset": "CSV: test_rashi",
+    "models": [
+      {
+        "name": "AWS STT",
+        "streaming": true,
+        "cost_batch": "Tested",
+        "cost_streaming": "Tested",
+        "latency_batch": 2.0,
+        "latency_streaming": 0.5,
+        "score": 3.0
+      }
+    ],
+    "is_custom": true,
+    "language": "hinglish"
   }
 }
