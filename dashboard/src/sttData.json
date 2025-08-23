@@ -1,239 +1,315 @@
 {
-    "english": {
-      "dataset": "Librispeech Dataset (US English Benchmark)",
-      "models": [
-        {
-          "name": "Deepgram Nova 3",
-          "wer_clean": 0.185,
-          "cer_clean": 0.0441,
-          "wer_other": 0.233,
-          "cer_other": 0.068,
-          "cost_batch": 0.216,
-          "cost_streaming": 0.462,
-          "latency_batch": 1.648,
-          "latency_streaming": 0.148,
-          "streaming": true
-        },
-        {
-          "name": "Deepgram Nova 2",
-          "wer_clean": 0.193,
-          "cer_clean": 0.049,
-          "wer_other": 0.249,
-          "cer_other": 0.078,
-          "cost_batch": 0.348,
-          "cost_streaming": 0.282,
-          "latency_batch": 2.03,
-          "latency_streaming": 0.165,
-          "streaming": true
-        },
-        {
-          "name": "Whisper Large v2",
-          "wer_clean": 0.171,
-          "cer_clean": 0.048,
-          "wer_other": 0.197,
-          "cer_other": 0.06,
-          "cost_batch": "Self hosted",
-          "cost_streaming": "Self hosted",
-          "latency_batch": 5.889,
-          "latency_streaming": null,
-          "streaming": false
-        },
-        {
-          "name": "Gladia",
-          "wer_clean": 0.198,
-          "cer_clean": 0.418,
-          "wer_other": 0.213,
-          "cer_other": 0.063,
-          "cost_batch": 0.612,
-          "cost_streaming": 0.756,
-          "latency_batch": "24h for 5h",
-          "latency_streaming": 0.3,
-          "streaming": true
-        },
-        {
-          "name": "AWS STT",
-          "wer_clean": 0.163,
-          "cer_clean": 0.041,
-          "wer_other": 0.213,
-          "cer_other": 0.06,
-          "cost_batch": 1.44,
-          "cost_streaming": 1.44,
-          "latency_batch": 10.830,
-          "latency_streaming": 1.057,
-          "streaming": true
-        },
-        {
-          "name": "Google STT v2",
-          "wer_clean": 0.213,
-          "cer_clean": 0.064,
-          "wer_other": 0.278,
-          "cer_other": 0.103,
-          "cost_batch": 0.96,
-          "cost_streaming": 0.96,
-          "latency_batch": 2.527,
-          "latency_streaming": 0.551,
-          "streaming": true
-        },
-        {
-          "name": "Cartesia Ink Whisper",
-          "cost_batch": 0.065,
-          "cost_streaming": 0.13,
-          "latency_batch": 0.157,
-          "latency_streaming": 0.160,
-          "streaming": true
-        }
-      ]
-    },
-    "hinglish": {
-      "dataset": "In house Hinglish dataset (cult and youtube)",
-      "models": [
-        {
-          "name": "AWS STT",
-          "score": 4.2,
-          "cost_batch": 1.44,
-          "cost_streaming": 1.44,
-          "latency_batch": 10.830,
-          "latency_streaming": 1.057,
-          "streaming": true
-        },
-        {
-          "name": "Google STT",
-          "score": 4.01,
-          "cost_batch": 0.96,
-          "cost_streaming": 0.96,
-          "latency_batch": 2.527,
-          "latency_streaming": 0.26,
-          "streaming": true
-        },
-        {
-          "name": "Whisper Large v2",
-          "score": 3.6,
-          "cost_batch": "Self hosted",
-          "cost_streaming": "Self hosted",
-          "latency_batch": 5.889,
-          "latency_streaming": null,
-          "streaming": false
-        },
-        {
-          "name": "Cartesia Ink Whisper",
-          "cost_batch": 0.065,
-          "cost_streaming": 0.13,
-          "latency_batch": 0.250,
-          "latency_streaming": 0.101,
-          "streaming": true
-        },
-        {
-          "name": "Gladia",
-          "cost_batch": 0.612,
-          "cost_streaming": 0.756,
-          "latency_batch": "24h for 5h",
-          "latency_streaming": 0.3,
-          "streaming": true
-        },
-        {
-          "name": "Gemini 2.5 Pro",
-          "score": 4.3,
-          "cost_batch": "Contact sales",
-          "cost_streaming": "Contact sales",
-          "latency_batch": 2.1,
-          "latency_streaming": 0.8,
-          "streaming": true
-        }
-      ]
-    },
-    "marathi": {
-      "dataset": "TheAIchemist13/marathi_asr_dataset",
-      "models": [
-        {
-          "name": "Whisper",
-          "wer": 0.7766,
-          "cer": 0.2960,
-          "cost_batch": "Self hosted",
-          "cost_streaming": "Self hosted",
-          "latency_batch": 5.889,
-          "latency_streaming": null,
-          "streaming": false
-        },
-        {
-          "name": "Google STT",
-          "wer": 0.3600,
-          "cer": 0.1476,
-          "cost_batch": 0.96,
-          "cost_streaming": 0.96,
-          "latency_batch": 2.527,
-          "latency_streaming": 0.26,
-          "streaming": true
-        },
-        {
-          "name": "AWS STT",
-          "wer": 0.0787,
-          "cer": 0.0184,
-          "cost_batch": 1.44,
-          "cost_streaming": 1.44,
-          "latency_batch": 10.830,
-          "latency_streaming": 1.057,
-          "streaming": true
-        },
-        {
-          "name": "SARVAM",
-          "wer": 0.2865,
-          "cer": 0.0548,
-          "cost_batch": 0.5,
-          "cost_streaming": 0.75,
-          "latency_batch": 3.2,
-          "latency_streaming": 0.45,
-          "streaming": true
-        },
-        {
-          "name": "AZURE",
-          "wer": 0.1514,
-          "cer": 0.0527,
-          "cost_batch": 1.0,
-          "cost_streaming": 1.0,
-          "latency_batch": 8.5,
-          "latency_streaming": 0.8,
-          "streaming": true
-        },
-        {
-          "name": "IndicConformer Multi (RNNT)",
-          "wer": 0.0542,
-          "cer": 0.0169,
-          "cost_batch": "Self hosted",
-          "cost_streaming": "Self hosted",
-          "latency_batch": 4.2,
-          "latency_streaming": null,
-          "streaming": false
-        },
-        {
-          "name": "IndicConformer Multi (CTC)",
-          "wer": 0.0551,
-          "cer": 0.0139,
-          "cost_batch": "Self hosted",
-          "cost_streaming": "Self hosted",
-          "latency_batch": 4.0,
-          "latency_streaming": null,
-          "streaming": false
-        },
-        {
-          "name": "IndicConformer Large (RNNT)",
-          "wer": 0.0075,
-          "cer": 0.0031,
-          "cost_batch": "Self hosted",
-          "cost_streaming": "Self hosted",
-          "latency_batch": 6.8,
-          "latency_streaming": null,
-          "streaming": false
-        },
-        {
-          "name": "IndicConformer Large (CTC)",
-          "wer": 0.0150,
-          "cer": 0.0047,
-          "cost_batch": "Self hosted",
-          "cost_streaming": "Self hosted",
-          "latency_batch": 6.5,
-          "latency_streaming": null,
-          "streaming": false
-        }
-      ]
-    }
+  "english": {
+    "dataset": "Librispeech Dataset (US English Benchmark)",
+    "models": [
+      {
+        "name": "Deepgram Nova 3",
+        "wer_clean": 0.185,
+        "cer_clean": 0.0441,
+        "wer_other": 0.233,
+        "cer_other": 0.068,
+        "cost_batch": 0.216,
+        "cost_streaming": 0.462,
+        "latency_batch": 1.648,
+        "latency_streaming": 0.148,
+        "streaming": true
+      },
+      {
+        "name": "Deepgram Nova 2",
+        "wer_clean": 0.193,
+        "cer_clean": 0.049,
+        "wer_other": 0.249,
+        "cer_other": 0.078,
+        "cost_batch": 0.348,
+        "cost_streaming": 0.282,
+        "latency_batch": 2.03,
+        "latency_streaming": 0.165,
+        "streaming": true
+      },
+      {
+        "name": "Whisper Large v2",
+        "wer_clean": 0.171,
+        "cer_clean": 0.048,
+        "wer_other": 0.197,
+        "cer_other": 0.06,
+        "cost_batch": "Self hosted",
+        "cost_streaming": "Self hosted",
+        "latency_batch": 5.889,
+        "latency_streaming": null,
+        "streaming": false
+      },
+      {
+        "name": "Gladia",
+        "wer_clean": 0.198,
+        "cer_clean": 0.418,
+        "wer_other": 0.213,
+        "cer_other": 0.063,
+        "cost_batch": 0.612,
+        "cost_streaming": 0.756,
+        "latency_batch": "24h for 5h",
+        "latency_streaming": 0.3,
+        "streaming": true
+      },
+      {
+        "name": "AWS STT",
+        "wer_clean": 0.163,
+        "cer_clean": 0.041,
+        "wer_other": 0.213,
+        "cer_other": 0.06,
+        "cost_batch": 1.44,
+        "cost_streaming": 1.44,
+        "latency_batch": 10.83,
+        "latency_streaming": 1.057,
+        "streaming": true
+      },
+      {
+        "name": "Google STT v2",
+        "wer_clean": 0.213,
+        "cer_clean": 0.064,
+        "wer_other": 0.278,
+        "cer_other": 0.103,
+        "cost_batch": 0.96,
+        "cost_streaming": 0.96,
+        "latency_batch": 2.527,
+        "latency_streaming": 0.551,
+        "streaming": true
+      },
+      {
+        "name": "Cartesia Ink Whisper",
+        "cost_batch": 0.065,
+        "cost_streaming": 0.13,
+        "latency_batch": 0.157,
+        "latency_streaming": 0.16,
+        "streaming": true
+      },
+      {
+        "name": "Deepgram Nova 3",
+        "streaming": true,
+        "cost_batch": "Tested",
+        "cost_streaming": "Tested",
+        "latency_batch": 2.0,
+        "latency_streaming": 0.5,
+        "wer_clean": 0,
+        "cer_clean": 0,
+        "wer_other": 0.0,
+        "cer_other": 0.0,
+        "dataset_source": "CSV: test_rashi"
+      },
+      {
+        "name": "Whisper Large v2",
+        "streaming": false,
+        "cost_batch": "Tested",
+        "cost_streaming": "Tested",
+        "latency_batch": 2.0,
+        "latency_streaming": null,
+        "wer_clean": 0,
+        "cer_clean": 0,
+        "wer_other": 0.0,
+        "cer_other": 0.0,
+        "dataset_source": "CSV: test_rashi"
+      }
+    ]
+  },
+  "hinglish": {
+    "dataset": "In house Hinglish dataset (cult and youtube)",
+    "models": [
+      {
+        "name": "AWS STT",
+        "score": 4.2,
+        "cost_batch": 1.44,
+        "cost_streaming": 1.44,
+        "latency_batch": 10.83,
+        "latency_streaming": 1.057,
+        "streaming": true
+      },
+      {
+        "name": "Google STT",
+        "score": 4.01,
+        "cost_batch": 0.96,
+        "cost_streaming": 0.96,
+        "latency_batch": 2.527,
+        "latency_streaming": 0.26,
+        "streaming": true
+      },
+      {
+        "name": "Whisper Large v2",
+        "score": 3.6,
+        "cost_batch": "Self hosted",
+        "cost_streaming": "Self hosted",
+        "latency_batch": 5.889,
+        "latency_streaming": null,
+        "streaming": false
+      },
+      {
+        "name": "Cartesia Ink Whisper",
+        "cost_batch": 0.065,
+        "cost_streaming": 0.13,
+        "latency_batch": 0.25,
+        "latency_streaming": 0.101,
+        "streaming": true
+      },
+      {
+        "name": "Gladia",
+        "cost_batch": 0.612,
+        "cost_streaming": 0.756,
+        "latency_batch": "24h for 5h",
+        "latency_streaming": 0.3,
+        "streaming": true
+      },
+      {
+        "name": "Gemini 2.5 Pro",
+        "score": 4.3,
+        "cost_batch": "Contact sales",
+        "cost_streaming": "Contact sales",
+        "latency_batch": 2.1,
+        "latency_streaming": 0.8,
+        "streaming": true
+      },
+      {
+        "name": "AWS STT",
+        "streaming": true,
+        "cost_batch": "Tested",
+        "cost_streaming": "Tested",
+        "latency_batch": 2.0,
+        "latency_streaming": 0.5,
+        "score": 3.0,
+        "dataset_source": "CSV: test_rashi"
+      }
+    ]
+  },
+  "marathi": {
+    "dataset": "TheAIchemist13/marathi_asr_dataset",
+    "models": [
+      {
+        "name": "Whisper",
+        "wer": 0.7766,
+        "cer": 0.296,
+        "cost_batch": "Self hosted",
+        "cost_streaming": "Self hosted",
+        "latency_batch": 5.889,
+        "latency_streaming": null,
+        "streaming": false
+      },
+      {
+        "name": "Google STT",
+        "wer": 0.36,
+        "cer": 0.1476,
+        "cost_batch": 0.96,
+        "cost_streaming": 0.96,
+        "latency_batch": 2.527,
+        "latency_streaming": 0.26,
+        "streaming": true
+      },
+      {
+        "name": "AWS STT",
+        "wer": 0.0787,
+        "cer": 0.0184,
+        "cost_batch": 1.44,
+        "cost_streaming": 1.44,
+        "latency_batch": 10.83,
+        "latency_streaming": 1.057,
+        "streaming": true
+      },
+      {
+        "name": "SARVAM",
+        "wer": 0.2865,
+        "cer": 0.0548,
+        "cost_batch": 0.5,
+        "cost_streaming": 0.75,
+        "latency_batch": 3.2,
+        "latency_streaming": 0.45,
+        "streaming": true
+      },
+      {
+        "name": "AZURE",
+        "wer": 0.1514,
+        "cer": 0.0527,
+        "cost_batch": 1.0,
+        "cost_streaming": 1.0,
+        "latency_batch": 8.5,
+        "latency_streaming": 0.8,
+        "streaming": true
+      },
+      {
+        "name": "IndicConformer Multi (RNNT)",
+        "wer": 0.0542,
+        "cer": 0.0169,
+        "cost_batch": "Self hosted",
+        "cost_streaming": "Self hosted",
+        "latency_batch": 4.2,
+        "latency_streaming": null,
+        "streaming": false
+      },
+      {
+        "name": "IndicConformer Multi (CTC)",
+        "wer": 0.0551,
+        "cer": 0.0139,
+        "cost_batch": "Self hosted",
+        "cost_streaming": "Self hosted",
+        "latency_batch": 4.0,
+        "latency_streaming": null,
+        "streaming": false
+      },
+      {
+        "name": "IndicConformer Large (RNNT)",
+        "wer": 0.0075,
+        "cer": 0.0031,
+        "cost_batch": "Self hosted",
+        "cost_streaming": "Self hosted",
+        "latency_batch": 6.8,
+        "latency_streaming": null,
+        "streaming": false
+      },
+      {
+        "name": "IndicConformer Large (CTC)",
+        "wer": 0.015,
+        "cer": 0.0047,
+        "cost_batch": "Self hosted",
+        "cost_streaming": "Self hosted",
+        "latency_batch": 6.5,
+        "latency_streaming": null,
+        "streaming": false
+      }
+    ]
+  },
+  "csv_27669989": {
+    "dataset": "CSV: test_rashi",
+    "models": [
+      {
+        "name": "Deepgram Nova 3",
+        "streaming": true,
+        "cost_batch": "Tested",
+        "cost_streaming": "Tested",
+        "latency_batch": 2.0,
+        "latency_streaming": 0.5,
+        "wer_clean": 0,
+        "cer_clean": 0,
+        "wer_other": 0.0,
+        "cer_other": 0.0
+      },
+      {
+        "name": "AWS STT",
+        "streaming": true,
+        "cost_batch": "Tested",
+        "cost_streaming": "Tested",
+        "latency_batch": 2.0,
+        "latency_streaming": 0.5,
+        "score": 3.0
+      },
+      {
+        "name": "Whisper Large v2",
+        "streaming": false,
+        "cost_batch": "Tested",
+        "cost_streaming": "Tested",
+        "latency_batch": 2.0,
+        "latency_streaming": null,
+        "wer_clean": 0,
+        "cer_clean": 0,
+        "wer_other": 0.0,
+        "cer_other": 0.0
+      }
+    ],
+    "is_custom": true,
+    "language": "english"
   }
+}

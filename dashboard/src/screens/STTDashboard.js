@@ -7,6 +7,7 @@ const STTDashboard = () => {
   const [selectedModel1, setSelectedModel1] = useState('');
   const [selectedModel2, setSelectedModel2] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
+  const [selectedDataset, setSelectedDataset] = useState('default');
   
   // Testing functionality states
   const [selectedTestModel, setSelectedTestModel] = useState('');
@@ -22,9 +23,10 @@ const STTDashboard = () => {
     marathi: { dataset: 'Loading...', models: [] },
     hinglish: { dataset: 'Loading...', models: [] }
   });
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Load STT data from backend
-  useEffect(() => {
+  const loadData = () => {
     console.log('Fetching data from backend...');
     fetch('/api/results')
       .then(res => {
@@ -36,10 +38,15 @@ const STTDashboard = () => {
       .then(data => {
         console.log('Data received:', data);
         setSttData(data);
+        
+        // Extract custom datasets
+        const customKeys = Object.keys(data).filter(key => 
+          key.startsWith('csv_') || (data[key].is_custom === true)
+        );
+        setCustomDatasets(customKeys);
       })
       .catch(err => {
         console.error('Error loading data:', err);
-        // Set default data if backend is not available
         setSttData({
           english: { 
             dataset: 'Error: Could not connect to backend. Please ensure the Flask server is running on port 5000.', 
@@ -49,9 +56,24 @@ const STTDashboard = () => {
           hinglish: { dataset: 'Backend not connected', models: [] }
         });
       });
-  }, []);
+  };
 
-  const currentData = sttData[selectedLanguage] || { models: [] };
+  useEffect(() => {
+    loadData();
+    // Poll for updates every 5 seconds
+    const interval = setInterval(loadData, 5000);
+    return () => clearInterval(interval);
+  }, [refreshKey]);
+
+  // Get current data based on selected dataset
+  const currentData = useMemo(() => {
+    if (selectedDataset === 'default') {
+      return sttData[selectedLanguage] || { models: [] };
+    } else {
+      return sttData[selectedDataset] || { models: [] };
+    }
+  }, [sttData, selectedLanguage, selectedDataset]);
+
   const availableModels = currentData.models?.map(m => m.name) || [];
 
   const formatMetric = (value, isPercentage = false) => {
@@ -137,7 +159,7 @@ const STTDashboard = () => {
     formData.append('csv', uploadedFile);
     formData.append('model', selectedTestModel);
     formData.append('language', selectedLanguage);
-    formData.append('dataset_name', `custom_${uploadedFile.name.replace('.csv', '')}_${Date.now()}`);
+    formData.append('dataset_name', `CSV: ${uploadedFile.name.replace('.csv', '')}`);
     
     try {
       const response = await fetch('/api/test-csv', {
@@ -162,17 +184,19 @@ const STTDashboard = () => {
             setTestingProgress(100);
             
             // Reload data to include new dataset
-            const dataRes = await fetch('/api/results');
-            const newData = await dataRes.json();
-            setSttData(newData);
-            
-            // Add to custom datasets
-            setCustomDatasets(prev => [...prev, status.dataset_name]);
+            setRefreshKey(prev => prev + 1);
             
             setTimeout(() => {
               setShowTestingModal(false);
               alert('Testing completed! Results added to datasets.');
+              // Reset form
+              setUploadedFile(null);
+              setSelectedTestModel('');
             }, 1000);
+          } else if (status.status === 'failed') {
+            clearInterval(pollInterval);
+            setShowTestingModal(false);
+            alert(`Testing failed: ${status.error || 'Unknown error'}`);
           }
         }, 2000);
       }
@@ -384,7 +408,7 @@ const STTDashboard = () => {
       }}>
         <h3 style={{ margin: '0 0 1rem', fontSize: '1.5rem' }}>📋 CSV Batch Testing</h3>
         <p style={{ fontSize: '1.1rem', opacity: 0.9 }}>
-          Upload a CSV file to test a model on multiple audio files and add results as a custom dataset
+          Upload a CSV file to test a model on multiple audio files. Results will be saved and appear as a new dataset in the All Models tab.
         </p>
       </div>
 
@@ -489,13 +513,18 @@ const STTDashboard = () => {
           padding: '1.5rem',
           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
         }}>
-          <h4 style={{ margin: '0 0 1rem', color: '#1f2937' }}>📂 Custom Datasets</h4>
+          <h4 style={{ margin: '0 0 1rem', color: '#1f2937' }}>📂 Processed CSV Datasets</h4>
           <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
-            {customDatasets.map((dataset, idx) => (
-              <li key={idx} style={{ color: '#6b7280', marginBottom: '0.5rem' }}>
-                {dataset}
-              </li>
-            ))}
+            {customDatasets.map((datasetKey, idx) => {
+              const dataset = sttData[datasetKey];
+              return (
+                <li key={idx} style={{ color: '#6b7280', marginBottom: '0.5rem' }}>
+                  {dataset?.dataset || datasetKey} 
+                  {dataset?.language && ` (${dataset.language})`}
+                  {dataset?.models?.length > 0 && ` - ${dataset.models.length} model(s) tested`}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -504,6 +533,37 @@ const STTDashboard = () => {
 
   const renderOverview = () => (
     <div>
+      {/* Dataset Selection for custom datasets */}
+      {customDatasets.length > 0 && (
+        <div style={{ marginBottom: '2rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: '#374151' }}>
+            📂 Select Dataset
+          </label>
+          <select
+            value={selectedDataset}
+            onChange={(e) => setSelectedDataset(e.target.value)}
+            style={{
+              padding: '0.75rem',
+              borderRadius: '8px',
+              border: '2px solid #e5e7eb',
+              fontSize: '1rem',
+              background: 'white',
+              minWidth: '300px'
+            }}
+          >
+            <option value="default">Default Dataset</option>
+            {customDatasets.map(datasetKey => {
+              const dataset = sttData[datasetKey];
+              return (
+                <option key={datasetKey} value={datasetKey}>
+                  {dataset?.dataset || datasetKey}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+      )}
+
       {/* Dataset Info Card */}
       <div style={{
         background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -519,12 +579,17 @@ const STTDashboard = () => {
         <p style={{ fontSize: '1rem', fontWeight: 'bold' }}>
           🔍 Models evaluated: <span style={{ fontSize: '1.5rem' }}>{currentData.models?.length || 0}</span>
         </p>
+        {currentData.is_custom && (
+          <p style={{ fontSize: '0.9rem', marginTop: '0.5rem', opacity: 0.9 }}>
+            💾 Custom CSV Dataset - Language: {currentData.language}
+          </p>
+        )}
       </div>
 
       {/* Quick Stats */}
       {currentData.models && currentData.models.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-          {selectedLanguage === 'english' && (
+          {(selectedLanguage === 'english' || currentData.language === 'english') && (
             <>
               <div style={{
                 background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
@@ -554,11 +619,53 @@ const STTDashboard = () => {
               </div>
             </>
           )}
+          {(selectedLanguage === 'hinglish' || currentData.language === 'hinglish') && (
+            <div style={{
+              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              borderRadius: '12px',
+              padding: '1.5rem',
+              color: 'white'
+            }}>
+              <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.9rem', opacity: 0.9 }}>⭐ Best Score</h4>
+              <p style={{ margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 'bold' }}>
+                {formatMetric(getBestModel(currentData.models, 'score')?.score)}/5.0
+              </p>
+              <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.8 }}>{getBestModel(currentData.models, 'score')?.name}</p>
+            </div>
+          )}
+          {(selectedLanguage === 'marathi' || currentData.language === 'marathi') && (
+            <>
+              <div style={{
+                background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
+                borderRadius: '12px',
+                padding: '1.5rem',
+                color: 'white'
+              }}>
+                <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.9rem', opacity: 0.9 }}>🏆 Best WER</h4>
+                <p style={{ margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 'bold' }}>
+                  {formatMetric(getBestModel(currentData.models, 'wer')?.wer, true)}
+                </p>
+                <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.8 }}>{getBestModel(currentData.models, 'wer')?.name}</p>
+              </div>
+              <div style={{
+                background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                borderRadius: '12px',
+                padding: '1.5rem',
+                color: 'white'
+              }}>
+                <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.9rem', opacity: 0.9 }}>🎯 Best CER</h4>
+                <p style={{ margin: '0 0 0.25rem', fontSize: '1.5rem', fontWeight: 'bold' }}>
+                  {formatMetric(getBestModel(currentData.models, 'cer')?.cer, true)}
+                </p>
+                <p style={{ margin: 0, fontSize: '0.8rem', opacity: 0.8 }}>{getBestModel(currentData.models, 'cer')?.name}</p>
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {/* Performance Chart */}
-      {selectedLanguage === 'english' && currentData.models?.length > 0 && (
+      {(selectedLanguage === 'english' || currentData.language === 'english') && currentData.models?.length > 0 && currentData.models.some(m => m.wer_clean) && (
         <div style={{
           background: 'white',
           borderRadius: '12px',
@@ -597,7 +704,7 @@ const STTDashboard = () => {
           <p style={{ color: '#6b7280', fontSize: '1.1rem' }}>
             {currentData.dataset?.includes('Error') ? 
               '⚠️ Cannot connect to backend server. Please ensure Flask is running on port 5000.' :
-              '📊 No model data available for this language.'}
+              '📊 No model data available for this dataset.'}
           </p>
         </div>
       )}
@@ -623,7 +730,7 @@ const STTDashboard = () => {
     
     if (!model1 || !model2) return null;
     
-    const metrics = Object.keys(model1).filter(key => key !== 'name');
+    const metrics = Object.keys(model1).filter(key => key !== 'name' && key !== 'dataset_source');
 
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
@@ -678,125 +785,177 @@ const STTDashboard = () => {
     );
   };
 
-  const renderAllModels = () => (
-    <div style={{
-      background: 'white',
-      borderRadius: '12px',
-      padding: '1.5rem',
-      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-    }}>
-      <h3 style={{ margin: '0 0 1rem' }}>📊 Complete Models Comparison with Latency</h3>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: '#f8fafc' }}>
-              <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>🤖 Model</th>
-              {selectedLanguage === 'english' && (
-                <>
-                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>📝 WER Clean</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>🔤 CER Clean</th>
-                </>
-              )}
-              {selectedLanguage === 'marathi' && (
-                <>
-                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>📊 WER</th>
-                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>🎯 CER</th>
-                </>
-              )}
-              {selectedLanguage === 'hinglish' && (
-                <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>⭐ Score</th>
-              )}
-              <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>⏱️ Batch Latency</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>📡 Stream Latency</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>💰 Cost</th>
-              <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>🔴 Streaming</th>
-            </tr>
-          </thead>
-          <tbody>
-            {currentData.models?.map((model, index) => (
-              <tr key={index} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '0.75rem', fontWeight: '500' }}>{model.name}</td>
-                {selectedLanguage === 'english' && (
-                  <>
+  const renderAllModels = () => {
+    // Determine which language this dataset is for
+    const datasetLanguage = currentData.language || selectedLanguage;
+    
+    return (
+      <div>
+        {/* Dataset Selector */}
+        <div style={{ marginBottom: '2rem' }}>
+          <label style={{ display: 'block', marginBottom: '0.5rem', fontWeight: '500', color: '#374151' }}>
+            📂 Select Dataset to View
+          </label>
+          <select
+            value={selectedDataset}
+            onChange={(e) => setSelectedDataset(e.target.value)}
+            style={{
+              padding: '0.75rem',
+              borderRadius: '8px',
+              border: '2px solid #e5e7eb',
+              fontSize: '1rem',
+              background: 'white',
+              minWidth: '300px'
+            }}
+          >
+            <optgroup label="Standard Datasets">
+              <option value="default">Default ({selectedLanguage})</option>
+            </optgroup>
+            {customDatasets.length > 0 && (
+              <optgroup label="Custom CSV Datasets">
+                {customDatasets.map(datasetKey => {
+                  const dataset = sttData[datasetKey];
+                  return (
+                    <option key={datasetKey} value={datasetKey}>
+                      {dataset?.dataset || datasetKey}
+                    </option>
+                  );
+                })}
+              </optgroup>
+            )}
+          </select>
+        </div>
+
+        <div style={{
+          background: 'white',
+          borderRadius: '12px',
+          padding: '1.5rem',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+        }}>
+          <h3 style={{ margin: '0 0 1rem' }}>
+            📊 Complete Models Comparison - {currentData.dataset || 'Dataset'}
+          </h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc' }}>
+                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>🤖 Model</th>
+                  {(datasetLanguage === 'english') && (
+                    <>
+                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>📝 WER Clean</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>🔤 CER Clean</th>
+                    </>
+                  )}
+                  {(datasetLanguage === 'marathi') && (
+                    <>
+                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>📊 WER</th>
+                      <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>🎯 CER</th>
+                    </>
+                  )}
+                  {(datasetLanguage === 'hinglish') && (
+                    <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>⭐ Score</th>
+                  )}
+                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>⏱️ Batch Latency</th>
+                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>📡 Stream Latency</th>
+                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>💰 Cost</th>
+                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>🔴 Streaming</th>
+                  {currentData.models?.some(m => m.dataset_source) && (
+                    <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>📂 Source</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {currentData.models?.map((model, index) => (
+                  <tr key={index} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '0.75rem', fontWeight: '500' }}>{model.name}</td>
+                    {(datasetLanguage === 'english') && (
+                      <>
+                        <td style={{ padding: '0.75rem' }}>
+                          <span style={{
+                            color: getMetricColorClass(model.wer_clean, 'wer') === 'good' ? '#059669' : 
+                                   getMetricColorClass(model.wer_clean, 'wer') === 'medium' ? '#d97706' : '#dc2626'
+                          }}>
+                            {formatMetric(model.wer_clean, true)}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem' }}>
+                          <span style={{
+                            color: getMetricColorClass(model.cer_clean, 'cer') === 'good' ? '#059669' : 
+                                   getMetricColorClass(model.cer_clean, 'cer') === 'medium' ? '#d97706' : '#dc2626'
+                          }}>
+                            {formatMetric(model.cer_clean, true)}
+                          </span>
+                        </td>
+                      </>
+                    )}
+                    {(datasetLanguage === 'marathi') && (
+                      <>
+                        <td style={{ padding: '0.75rem' }}>
+                          <span style={{
+                            color: getMetricColorClass(model.wer, 'wer') === 'good' ? '#059669' : 
+                                   getMetricColorClass(model.wer, 'wer') === 'medium' ? '#d97706' : '#dc2626'
+                          }}>
+                            {formatMetric(model.wer, true)}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem' }}>
+                          <span style={{
+                            color: getMetricColorClass(model.cer, 'cer') === 'good' ? '#059669' : 
+                                   getMetricColorClass(model.cer, 'cer') === 'medium' ? '#d97706' : '#dc2626'
+                          }}>
+                            {formatMetric(model.cer, true)}
+                          </span>
+                        </td>
+                      </>
+                    )}
+                    {(datasetLanguage === 'hinglish') && (
+                      <td style={{ padding: '0.75rem' }}>
+                        <span style={{
+                          color: getMetricColorClass(model.score, 'score') === 'good' ? '#059669' : 
+                                 getMetricColorClass(model.score, 'score') === 'medium' ? '#d97706' : '#dc2626'
+                        }}>
+                          {formatMetric(model.score)}/5.0
+                        </span>
+                      </td>
+                    )}
                     <td style={{ padding: '0.75rem' }}>
-                      <span style={{
-                        color: getMetricColorClass(model.wer_clean, 'wer') === 'good' ? '#059669' : 
-                               getMetricColorClass(model.wer_clean, 'wer') === 'medium' ? '#d97706' : '#dc2626'
-                      }}>
-                        {formatMetric(model.wer_clean, true)}
-                      </span>
+                      {typeof model.latency_batch === 'number' ? `${model.latency_batch}s` : model.latency_batch || 'N/A'}
+                    </td>
+                    <td style={{ padding: '0.75rem' }}>
+                      {typeof model.latency_streaming === 'number' ? `${model.latency_streaming}s` : model.latency_streaming || 'N/A'}
+                    </td>
+                    <td style={{ padding: '0.75rem' }}>
+                      {typeof model.cost_batch === 'number' ? `$${model.cost_batch}` : model.cost_batch || 'N/A'}
                     </td>
                     <td style={{ padding: '0.75rem' }}>
                       <span style={{
-                        color: getMetricColorClass(model.cer_clean, 'cer') === 'good' ? '#059669' : 
-                               getMetricColorClass(model.cer_clean, 'cer') === 'medium' ? '#d97706' : '#dc2626'
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.25rem',
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: '6px',
+                        fontSize: '0.875rem',
+                        fontWeight: '500',
+                        background: model.streaming ? '#dcfce7' : '#fee2e2',
+                        color: model.streaming ? '#166534' : '#991b1b'
                       }}>
-                        {formatMetric(model.cer_clean, true)}
+                        {model.streaming ? '✅ Yes' : '❌ No'}
                       </span>
                     </td>
-                  </>
-                )}
-                {selectedLanguage === 'marathi' && (
-                  <>
-                    <td style={{ padding: '0.75rem' }}>
-                      <span style={{
-                        color: getMetricColorClass(model.wer, 'wer') === 'good' ? '#059669' : 
-                               getMetricColorClass(model.wer, 'wer') === 'medium' ? '#d97706' : '#dc2626'
-                      }}>
-                        {formatMetric(model.wer, true)}
-                      </span>
-                    </td>
-                    <td style={{ padding: '0.75rem' }}>
-                      <span style={{
-                        color: getMetricColorClass(model.cer, 'cer') === 'good' ? '#059669' : 
-                               getMetricColorClass(model.cer, 'cer') === 'medium' ? '#d97706' : '#dc2626'
-                      }}>
-                        {formatMetric(model.cer, true)}
-                      </span>
-                    </td>
-                  </>
-                )}
-                {selectedLanguage === 'hinglish' && (
-                  <td style={{ padding: '0.75rem' }}>
-                    <span style={{
-                      color: getMetricColorClass(model.score, 'score') === 'good' ? '#059669' : 
-                             getMetricColorClass(model.score, 'score') === 'medium' ? '#d97706' : '#dc2626'
-                    }}>
-                      {formatMetric(model.score)}
-                    </span>
-                  </td>
-                )}
-                <td style={{ padding: '0.75rem' }}>
-                  {typeof model.latency_batch === 'number' ? `${model.latency_batch}s` : model.latency_batch || 'N/A'}
-                </td>
-                <td style={{ padding: '0.75rem' }}>
-                  {typeof model.latency_streaming === 'number' ? `${model.latency_streaming}s` : model.latency_streaming || 'N/A'}
-                </td>
-                <td style={{ padding: '0.75rem' }}>
-                  {typeof model.cost_batch === 'number' ? `$${model.cost_batch}` : model.cost_batch || 'N/A'}
-                </td>
-                <td style={{ padding: '0.75rem' }}>
-                  <span style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.25rem',
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '6px',
-                    fontSize: '0.875rem',
-                    fontWeight: '500',
-                    background: model.streaming ? '#dcfce7' : '#fee2e2',
-                    color: model.streaming ? '#166534' : '#991b1b'
-                  }}>
-                    {model.streaming ? '✅ Yes' : '❌ No'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    {currentData.models?.some(m => m.dataset_source) && (
+                      <td style={{ padding: '0.75rem', fontSize: '0.875rem', color: '#6b7280' }}>
+                        {model.dataset_source || 'Default'}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)', padding: '2rem' }}>
@@ -823,7 +982,10 @@ const STTDashboard = () => {
           </label>
           <select
             value={selectedLanguage}
-            onChange={(e) => setSelectedLanguage(e.target.value)}
+            onChange={(e) => {
+              setSelectedLanguage(e.target.value);
+              setSelectedDataset('default');
+            }}
             style={{
               padding: '0.75rem',
               borderRadius: '8px',
@@ -956,7 +1118,9 @@ const STTDashboard = () => {
             boxShadow: '0 20px 40px rgba(0, 0, 0, 0.2)'
           }}>
             <h3 style={{ margin: '0 0 0.5rem', color: '#1f2937' }}>🧪 Testing in Progress</h3>
-            <p style={{ margin: '0 0 1.5rem', color: '#6b7280' }}>Processing your request...</p>
+            <p style={{ margin: '0 0 1.5rem', color: '#6b7280' }}>
+              Running {selectedLanguage} pipeline...
+            </p>
             
             <div style={{
               width: '100%',
@@ -979,7 +1143,11 @@ const STTDashboard = () => {
             </p>
             
             {testingProgress < 100 && (
-              <div style={{ color: '#6b7280' }}>Processing...</div>
+              <div style={{ color: '#6b7280' }}>
+                {testingProgress < 20 && 'Initializing model...'}
+                {testingProgress >= 20 && testingProgress < 80 && 'Processing audio files...'}
+                {testingProgress >= 80 && 'Calculating metrics...'}
+              </div>
             )}
           </div>
         </div>

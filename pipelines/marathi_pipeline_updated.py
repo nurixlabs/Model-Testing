@@ -12,16 +12,16 @@ import soundfile as sf
 from tqdm import tqdm
 from datasets import load_dataset
 
-from config import OUTPUT_CONFIG
+from config import OUTPUT_CONFIG, S3_CONFIG
 from utils import (
     get_audio_duration,
     save_result,
     prepare_output_dir,
-    calculate_metrics
+    calculate_metrics,
+    download_file_from_s3
 )
 from models.model_factory import get_model
 
-from config import S3_CONFIG, OUTPUT_CONFIG
 
 def process_marathi_asr(
     model_name: str,
@@ -142,7 +142,8 @@ def process_marathi_asr(
                 'total_duration_seconds': total_duration,
                 'total_duration_hours': total_hours,
                 'avg_wer': metrics['avg_wer'],
-                'avg_cer': metrics['avg_cer']
+                'avg_cer': metrics['avg_cer'],
+                'num_files': metrics['num_files']
             }, f, indent=2)
         
         # Log results
@@ -196,7 +197,6 @@ DATASET_CONFIGS = {
 }
 
 
-
 def parse_s3_uri(s3_uri: str) -> tuple[str, str]:
     """
     Parse an S3 URI and return (bucket_name, key). If not an s3 uri, returns (None, path).
@@ -215,7 +215,7 @@ def parse_s3_uri(s3_uri: str) -> tuple[str, str]:
         return parts[0], ''
 
 
-def _marathi_iter_hf_samples(dataset_name: str, split: str, tmpdir: str, audio_col: str = 'audio', text_col: str = 'text'):
+def _marathi_iter_hf_samples(dataset_name: str, split: str, tmpdir: str, audio_col: str = 'audio', text_col: str = 'transcriptions'):
     from datasets import load_dataset
     import soundfile as sf
     ds = load_dataset(dataset_name)
@@ -246,6 +246,7 @@ def _marathi_iter_hf_samples(dataset_name: str, split: str, tmpdir: str, audio_c
         file_id = os.path.splitext(os.path.basename(local_path))[0]
         yield file_id, local_path, text
 
+
 def _marathi_iter_csv_samples(csv_path: str, tmpdir: str, default_bucket: str):
     import csv
     with open(csv_path, encoding='utf-8') as in_csv:
@@ -262,6 +263,7 @@ def _marathi_iter_csv_samples(csv_path: str, tmpdir: str, default_bucket: str):
             local_path = download_file_from_s3(target_bucket, k, tmpdir) if target_bucket else s3_path
             file_id = os.path.splitext(os.path.basename(local_path))[0]
             yield file_id, local_path, gb
+
 
 def process_marathi(
     model_name: str,
@@ -288,14 +290,18 @@ def process_marathi(
     source = cfg.get('source') or ('huggingface' if hf_dataset_name else 'csv' if csv_path else 'huggingface')
 
     if source == 'csv' and csv_path:
+        # CSV processing path
         dataset_name = os.path.splitext(os.path.basename(csv_path))[0]
         test_output_dir = prepare_output_dir(output_dir, model_name, dataset_name)
         results_csv = os.path.join(test_output_dir, 'results.csv')
         os.makedirs(test_output_dir, exist_ok=True)
+        
         with open(results_csv, 'w', newline='', encoding='utf-8') as csvfile:
             csvfile.write('file_id,ground_truth,hypothesis,wer,cer\n')
+        
         total_duration = 0.0
         results = []
+        
         with tempfile.TemporaryDirectory() as tmpdir:
             default_bucket = S3_CONFIG.get('bucket_name') if 'S3_CONFIG' in globals() else None
             for file_id, local_path, ground_truth in _marathi_iter_csv_samples(csv_path, tmpdir, default_bucket):
@@ -310,10 +316,22 @@ def process_marathi(
                         results.append({'file_id': file_id, 'wer': result['wer'], 'cer': result['cer']})
                 except Exception as e:
                     logging.error(f"Error processing {file_id}: {e}")
+        
+        # Calculate and save metrics
         if results:
             metrics = calculate_metrics(results)
-            with open(os.path.join(test_output_dir, 'metrics.json'), 'w', encoding='utf-8') as f:
-                json.dump({'dataset': dataset_name, 'model': model_name, 'avg_wer': metrics['avg_wer'], 'avg_cer': metrics['avg_cer'], 'num_files': metrics['num_files']}, f, indent=2)
+            metrics_path = os.path.join(test_output_dir, 'metrics.json')
+            with open(metrics_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'dataset': dataset_name,
+                    'model': model_name,
+                    'avg_wer': metrics['avg_wer'],
+                    'avg_cer': metrics['avg_cer'],
+                    'num_files': metrics['num_files'],
+                    'total_duration': total_duration
+                }, f, indent=2)
+            logging.info(f"Metrics saved to {metrics_path}")
+            logging.info(f"Average WER: {metrics['avg_wer']:.4f}, Average CER: {metrics['avg_cer']:.4f}")
         return
 
     # HuggingFace default
@@ -322,10 +340,13 @@ def process_marathi(
     test_output_dir = prepare_output_dir(output_dir, model_name, f"hf-{dataset_tag}")
     results_csv = os.path.join(test_output_dir, 'results.csv')
     os.makedirs(test_output_dir, exist_ok=True)
+    
     with open(results_csv, 'w', newline='', encoding='utf-8') as csvfile:
         csvfile.write('file_id,ground_truth,hypothesis,wer,cer\n')
+    
     total_duration = 0.0
     results = []
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         for file_id, local_path, ground_truth in _marathi_iter_hf_samples(dataset_name, hf_split, tmpdir):
             if total_duration >= OUTPUT_CONFIG['max_audio_duration']:
@@ -339,8 +360,20 @@ def process_marathi(
                     results.append({'file_id': file_id, 'wer': result['wer'], 'cer': result['cer']})
             except Exception as e:
                 logging.error(f"Error processing {file_id}: {e}")
+    
+    # Calculate and save metrics
     if results:
         metrics = calculate_metrics(results)
-        with open(os.path.join(test_output_dir, 'metrics.json'), 'w', encoding='utf-8') as f:
-            json.dump({'dataset': dataset_tag, 'model': model_name, 'avg_wer': metrics['avg_wer'], 'avg_cer': metrics['avg_cer'], 'num_files': metrics['num_files']}, f, indent=2)
+        metrics_path = os.path.join(test_output_dir, 'metrics.json')
+        with open(metrics_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'dataset': dataset_tag,
+                'model': model_name,
+                'avg_wer': metrics['avg_wer'],
+                'avg_cer': metrics['avg_cer'],
+                'num_files': metrics['num_files'],
+                'total_duration': total_duration
+            }, f, indent=2)
+        logging.info(f"Metrics saved to {metrics_path}")
+        logging.info(f"Average WER: {metrics['avg_wer']:.4f}, Average CER: {metrics['avg_cer']:.4f}")
     return

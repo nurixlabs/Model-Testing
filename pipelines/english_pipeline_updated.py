@@ -257,7 +257,6 @@ DATASET_CONFIGS = {
 }
 
 
-
 def parse_s3_uri(s3_uri: str) -> tuple[str, str]:
     """
     Parse an S3 URI and return (bucket_name, key). If not an s3 uri, returns (None, path).
@@ -309,6 +308,7 @@ def _english_iter_hf_samples(dataset_name: str, split: str, tmpdir: str, audio_c
         file_id = os.path.splitext(os.path.basename(local_path))[0]
         yield file_id, local_path, text
 
+
 def _english_iter_csv_samples(csv_path: str, tmpdir: str, default_bucket: str):
     import csv
     with open(csv_path, encoding='utf-8') as in_csv:
@@ -326,11 +326,13 @@ def _english_iter_csv_samples(csv_path: str, tmpdir: str, default_bucket: str):
             file_id = os.path.splitext(os.path.basename(local_path))[0]
             yield file_id, local_path, gb
 
+
 def process_english(
     model_name: str,
     model_config: Dict[str, Any],
     dataset_key: str = 'librispeech',
     output_dir: Optional[str] = None,
+    test_set: str = 'both',
     hf_dataset_name: Optional[str] = None,
     hf_split: str = 'test',
     csv_path: Optional[str] = None,
@@ -346,7 +348,7 @@ def process_english(
 
     # LibriSpeech default path
     if dataset_key == 'librispeech' and not (hf_dataset_name or csv_path):
-        return process_librispeech(model_name, model_config, test_set='both', output_dir=output_dir)
+        return process_librispeech(model_name, model_config, test_set=test_set, output_dir=output_dir)
 
     # Prepare model
     logging.info(f"Initializing {model_name} model...")
@@ -356,15 +358,20 @@ def process_english(
     # Decide dataset type
     cfg = DATASET_CONFIGS.get(dataset_key, {})
     source = cfg.get('source')
+    
     if csv_path or source == 'csv':
+        # CSV processing path
         dataset_name = os.path.splitext(os.path.basename(csv_path or 'custom.csv'))[0]
         test_output_dir = prepare_output_dir(output_dir, model_name, dataset_name)
         results_csv = os.path.join(test_output_dir, 'results.csv')
         os.makedirs(test_output_dir, exist_ok=True)
+        
         with open(results_csv, 'w', newline='', encoding='utf-8') as csvfile:
             csvfile.write('file_id,ground_truth,hypothesis,wer,cer\n')
+        
         total_duration = 0.0
         results = []
+        
         with tempfile.TemporaryDirectory() as tmpdir:
             default_bucket = S3_CONFIG.get('bucket_name')
             for file_id, local_path, ground_truth in _english_iter_csv_samples(csv_path, tmpdir, default_bucket):
@@ -379,24 +386,40 @@ def process_english(
                         results.append({'file_id': file_id, 'wer': result['wer'], 'cer': result['cer']})
                 except Exception as e:
                     logging.error(f"Error processing {file_id}: {e}")
+        
+        # Calculate and save metrics
         if results:
             metrics = calculate_metrics(results)
-            with open(os.path.join(test_output_dir, 'metrics.json'), 'w', encoding='utf-8') as f:
-                json.dump({'dataset': dataset_name, 'model': model_name, 'avg_wer': metrics['avg_wer'], 'avg_cer': metrics['avg_cer'], 'num_files': metrics['num_files']}, f, indent=2)
+            metrics_path = os.path.join(test_output_dir, 'metrics.json')
+            with open(metrics_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'dataset': dataset_name,
+                    'model': model_name,
+                    'avg_wer': metrics['avg_wer'],
+                    'avg_cer': metrics['avg_cer'],
+                    'num_files': metrics['num_files'],
+                    'total_duration': total_duration
+                }, f, indent=2)
+            logging.info(f"Metrics saved to {metrics_path}")
+            logging.info(f"Average WER: {metrics['avg_wer']:.4f}, Average CER: {metrics['avg_cer']:.4f}")
         return
 
     # HuggingFace path
     dataset_name = hf_dataset_name or cfg.get('dataset_name')
     if not dataset_name:
         raise ValueError("Please provide hf_dataset_name or use a DATASET_CONFIGS key with dataset_name.")
+    
     dataset_tag = dataset_name.split('/')[-1]
     test_output_dir = prepare_output_dir(output_dir, model_name, f"hf-{dataset_tag}")
     results_csv = os.path.join(test_output_dir, 'results.csv')
     os.makedirs(test_output_dir, exist_ok=True)
+    
     with open(results_csv, 'w', newline='', encoding='utf-8') as csvfile:
         csvfile.write('file_id,ground_truth,hypothesis,wer,cer\n')
+    
     total_duration = 0.0
     results = []
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         for file_id, local_path, ground_truth in _english_iter_hf_samples(dataset_name, hf_split, tmpdir):
             if total_duration >= OUTPUT_CONFIG['max_audio_duration']:
@@ -410,8 +433,20 @@ def process_english(
                     results.append({'file_id': file_id, 'wer': result['wer'], 'cer': result['cer']})
             except Exception as e:
                 logging.error(f"Error processing {file_id}: {e}")
+    
+    # Calculate and save metrics
     if results:
         metrics = calculate_metrics(results)
-        with open(os.path.join(test_output_dir, 'metrics.json'), 'w', encoding='utf-8') as f:
-            json.dump({'dataset': dataset_tag, 'model': model_name, 'avg_wer': metrics['avg_wer'], 'avg_cer': metrics['avg_cer'], 'num_files': metrics['num_files']}, f, indent=2)
+        metrics_path = os.path.join(test_output_dir, 'metrics.json')
+        with open(metrics_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'dataset': dataset_tag,
+                'model': model_name,
+                'avg_wer': metrics['avg_wer'],
+                'avg_cer': metrics['avg_cer'],
+                'num_files': metrics['num_files'],
+                'total_duration': total_duration
+            }, f, indent=2)
+        logging.info(f"Metrics saved to {metrics_path}")
+        logging.info(f"Average WER: {metrics['avg_wer']:.4f}, Average CER: {metrics['avg_cer']:.4f}")
     return

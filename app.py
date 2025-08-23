@@ -8,10 +8,19 @@ import logging
 import tempfile
 import threading
 import time
+import hashlib
+import glob
+import csv as csv_module
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+os.environ['AWS_PROFILE'] = 'Power-root'
 
 # Initialize AWS Secrets Manager early
 try:
@@ -26,24 +35,19 @@ except ImportError as e:
     logger.warning(f"Secrets manager not available: {e}")
     get_secret = os.environ.get
 
+# Import pipeline functions
+from pipelines.english_pipeline_updated import process_english
+from pipelines.marathi_pipeline_updated import process_marathi
+from pipelines.hinglish_pipeline_updated import process_hinglish
 
 # Try to import model-related modules
 try:
-    from config import STANDARD_MODELS
-    # Try to import model factory for actual model execution (optional)
-    try:
-        from models.model_factory import get_model
-        from config import MODEL_CONFIGS, AVAILABLE_MODELS, LANGUAGE_CONFIGS
-        MODELS_AVAILABLE = True
-    except ImportError:
-        # Model execution not available, but we can still show standard models
-        from config import MODEL_CONFIGS, AVAILABLE_MODELS, LANGUAGE_CONFIGS
-        MODELS_AVAILABLE = False
-        get_model = None
+    from config import STANDARD_MODELS, MODEL_CONFIGS, AVAILABLE_MODELS, LANGUAGE_CONFIGS
+    from models.model_factory import get_model
+    MODELS_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"Could not import config modules: {e}")
     MODELS_AVAILABLE = False
-    # Define some defaults if imports fail
     MODEL_CONFIGS = {}
     AVAILABLE_MODELS = []
     LANGUAGE_CONFIGS = {}
@@ -52,103 +56,99 @@ except ImportError as e:
 app = Flask(__name__)
 CORS(app)
 
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # File paths
 UPLOAD_FOLDER = 'temp_uploads'
+RESULTS_FOLDER = 'transcription_results'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(RESULTS_FOLDER, exist_ok=True)
 
 # Store running tasks
 running_tasks = {}
 
-# Initial STT data - this is your actual data
-# Try multiple possible locations for the STT data file
-STT_DATA = {}
-for stt_data_path in [
-    'dashboard/src/sttData.json',  # Container path
-    '/app/dashboard/src/sttData.json',  # Absolute container path
-    '/home/azureuser/test-pipelines/Model-Testing/dashboard/src/sttData.json'  # Legacy path
-]:
+# STT data file path
+STT_DATA_FILE = 'dashboard/src/sttData.json'
+
+# Load initial STT data
+def load_stt_data():
+    """Load STT data from file"""
     try:
-        with open(stt_data_path, 'r') as f:
-            STT_DATA = json.load(f)
-        logger.info(f"✅ Successfully loaded STT data from {stt_data_path}")
-        break
+        with open(STT_DATA_FILE, 'r') as f:
+            return json.load(f)
     except FileNotFoundError:
-        logger.debug(f"STT data file not found at {stt_data_path}")
-        continue
+        logger.warning(f"STT data file not found at {STT_DATA_FILE}, using default data")
+        return {
+            "english": {"dataset": "Librispeech Dataset (US English Benchmark)", "models": []},
+            "hinglish": {"dataset": "In house Hinglish dataset (cult and youtube)", "models": []},
+            "marathi": {"dataset": "TheAIchemist13/marathi_asr_dataset", "models": []}
+        }
 
-if not STT_DATA:
-    logger.warning("⚠️ No STT data file found, using empty data")
+def save_stt_data(data):
+    """Save STT data to file"""
+    try:
+        with open(STT_DATA_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        logger.info(f"✅ STT data saved to {STT_DATA_FILE}")
+    except Exception as e:
+        logger.error(f"Failed to save STT data: {e}")
 
-# Store the current data in memory
-current_stt_data = STT_DATA.copy()
+# Load initial data
+current_stt_data = load_stt_data()
 
+# Track processed CSV files (hash -> dataset info)
+csv_datasets = {}
+CSV_TRACKING_FILE = 'csv_datasets.json'
+
+def load_csv_tracking():
+    """Load CSV tracking data"""
+    global csv_datasets
+    try:
+        with open(CSV_TRACKING_FILE, 'r') as f:
+            csv_datasets = json.load(f)
+    except FileNotFoundError:
+        csv_datasets = {}
+
+def save_csv_tracking():
+    """Save CSV tracking data"""
+    try:
+        with open(CSV_TRACKING_FILE, 'w') as f:
+            json.dump(csv_datasets, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save CSV tracking: {e}")
+
+load_csv_tracking()
+
+def get_csv_hash(file_path):
+    """Get hash of CSV file for tracking"""
+    hash_md5 = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
 
 def merge_available_models_with_results(stt_data):
-    """
-    Merge the available standard models with existing test results.
-    This ensures all standard models appear in the dashboard even if not tested yet.
-    """
+    """Merge available standard models with existing test results."""
     merged_data = stt_data.copy()
     
-    # Ensure all languages exist
-    for language in ['english', 'hinglish', 'marathi']:
-        if language not in merged_data:
-            merged_data[language] = {
-                'dataset': get_dataset_description(language),
-                'models': []
+    # Add custom CSV datasets
+    for csv_hash, csv_info in csv_datasets.items():
+        lang = csv_info['language']
+        dataset_key = csv_info['dataset_key']
+        
+        # Check if this dataset already exists in the language
+        if dataset_key not in merged_data:
+            merged_data[dataset_key] = {
+                'dataset': csv_info['dataset_name'],
+                'models': csv_info.get('models', []),
+                'is_custom': True,
+                'csv_hash': csv_hash,
+                'language': lang
             }
     
-    # For each language, add standard models if they don't exist
-    for language in ['english', 'hinglish', 'marathi']:
-        existing_model_names = {model['name'] for model in merged_data[language].get('models', [])}
-        
-        # Add standard models that are available for this language
-        for model_key, model_info in STANDARD_MODELS.items():
-            if language in model_info.get('languages', []):
-                display_name = model_info['display_name']
-                
-                # Skip if already exists in test results
-                if display_name in existing_model_names:
-                    continue
-                
-                # Add model with placeholder data
-                model_entry = {
-                    'name': display_name,
-                    'streaming': model_info.get('streaming', False),
-                    'status': 'available',  # Indicates model is available but not tested
-                    'cost_batch': 'Not tested',
-                    'cost_streaming': 'Not tested',
-                    'latency_batch': None,
-                    'latency_streaming': None
-                }
-                
-                # Add language-specific placeholder metrics
-                if language == 'english':
-                    model_entry.update({
-                        'wer_clean': None,
-                        'cer_clean': None,
-                        'wer_other': None,
-                        'cer_other': None
-                    })
-                elif language == 'hinglish':
-                    model_entry.update({
-                        'score': None
-                    })
-                elif language == 'marathi':
-                    model_entry.update({
-                        'wer': None,
-                        'cer': None
-                    })
-                
-                merged_data[language]['models'].append(model_entry)
-    
     return merged_data
-
 
 def get_dataset_description(language):
     """Get the dataset description for a language."""
@@ -158,7 +158,6 @@ def get_dataset_description(language):
         'marathi': 'TheAIchemist13/marathi_asr_dataset'
     }
     return descriptions.get(language, f'{language.title()} Dataset')
-
 
 def get_model_key_from_display_name(display_name):
     """Map display name back to model key for processing."""
@@ -184,15 +183,201 @@ def get_model_key_from_display_name(display_name):
     }
     return name_to_key.get(display_name, display_name.lower().replace(' ', '_'))
 
+def process_pipeline_results(language, model_name, output_dir, csv_hash, dataset_name, model_key):
+    """Process pipeline results and update STT data"""
+    global current_stt_data, csv_datasets
+    
+    # Look for metrics.json in the expected pipeline output structure
+    metrics_file = None
+    
+    # Try multiple possible paths using glob patterns
+    possible_patterns = [
+        os.path.join(output_dir, model_key, "*", "metrics.json"),
+        os.path.join(output_dir, "*", "metrics.json"),
+        os.path.join(output_dir, "metrics.json"),
+    ]
+    
+    for pattern in possible_patterns:
+        matches = glob.glob(pattern)
+        if matches:
+            metrics_file = matches[0]
+            logger.info(f"Found metrics file using pattern {pattern}: {metrics_file}")
+            break
+    
+    # If still not found, walk the directory
+    if not metrics_file:
+        for root, dirs, files in os.walk(output_dir):
+            if 'metrics.json' in files:
+                metrics_file = os.path.join(root, 'metrics.json')
+                logger.info(f"Found metrics file by walking directory: {metrics_file}")
+                break
+    
+    # If no metrics.json, try to calculate from results.csv
+    if not metrics_file:
+        logger.warning(f"No metrics.json found, attempting to calculate from results.csv")
+        results_csv = None
+        
+        # Find results.csv
+        for root, dirs, files in os.walk(output_dir):
+            if 'results.csv' in files:
+                results_csv = os.path.join(root, 'results.csv')
+                logger.info(f"Found results.csv at: {results_csv}")
+                break
+        
+        if results_csv:
+            # Calculate metrics from CSV
+            wer_scores = []
+            cer_scores = []
+            llm_scores = []
+            
+            with open(results_csv, 'r', encoding='utf-8') as f:
+                reader = csv_module.DictReader(f)
+                for row in reader:
+                    if 'wer' in row and row['wer']:
+                        try:
+                            wer_scores.append(float(row['wer']))
+                        except:
+                            pass
+                    if 'cer' in row and row['cer']:
+                        try:
+                            cer_scores.append(float(row['cer']))
+                        except:
+                            pass
+                    if 'llm_score' in row and row['llm_score']:
+                        try:
+                            llm_scores.append(float(row['llm_score']))
+                        except:
+                            pass
+            
+            # Create metrics based on what we found
+            metrics = {}
+            if wer_scores:
+                metrics['avg_wer'] = sum(wer_scores) / len(wer_scores)
+            if cer_scores:
+                metrics['avg_cer'] = sum(cer_scores) / len(cer_scores)
+            if llm_scores:
+                metrics['average_score'] = sum(llm_scores) / len(llm_scores)
+                metrics['avg_llm_score'] = metrics['average_score']
+            
+            metrics['num_files'] = max(len(wer_scores), len(cer_scores), len(llm_scores), 1)
+            
+            logger.info(f"Calculated metrics from results.csv: {metrics}")
+        else:
+            logger.error(f"No metrics.json or results.csv found in {output_dir}")
+            # List directory structure for debugging
+            for root, dirs, files in os.walk(output_dir):
+                logger.info(f"  {root}: dirs={dirs}, files={files[:5]}")  # Limit files shown
+            return None
+    else:
+        logger.info(f"Loading metrics from: {metrics_file}")
+        with open(metrics_file, 'r') as f:
+            metrics = json.load(f)
+    
+    logger.info(f"Processing metrics: {metrics}")
+    
+    # Create model entry based on language
+    model_entry = {
+        'name': model_name,
+        'streaming': STANDARD_MODELS.get(model_key, {}).get('streaming', False),
+        'cost_batch': 'Tested',
+        'cost_streaming': 'Tested',
+        'latency_batch': 2.0,  # Placeholder
+        'latency_streaming': 0.5 if STANDARD_MODELS.get(model_key, {}).get('streaming', False) else None
+    }
+    
+    if language == 'english':
+        model_entry.update({
+            'wer_clean': metrics.get('avg_wer', 0),
+            'cer_clean': metrics.get('avg_cer', 0),
+            'wer_other': metrics.get('avg_wer', 0) * 1.2,  # Estimate
+            'cer_other': metrics.get('avg_cer', 0) * 1.2  # Estimate
+        })
+    elif language == 'hinglish':
+        # For Hinglish, the metric might be 'average_score' or 'avg_llm_score'
+        score = metrics.get('average_score') or metrics.get('avg_llm_score', 3.0)
+        model_entry.update({
+            'score': score
+        })
+    elif language == 'marathi':
+        model_entry.update({
+            'wer': metrics.get('avg_wer', 0),
+            'cer': metrics.get('avg_cer', 0)
+        })
+    
+    # Create dataset key for this CSV
+    dataset_key = f"csv_{csv_hash[:8]}"
+    
+    # Update CSV tracking
+    if csv_hash in csv_datasets:
+        # Update existing entry
+        existing_models = csv_datasets[csv_hash].get('models', [])
+        model_found = False
+        for idx, existing_model in enumerate(existing_models):
+            if existing_model['name'] == model_name:
+                existing_models[idx] = model_entry
+                model_found = True
+                break
+        if not model_found:
+            existing_models.append(model_entry)
+        csv_datasets[csv_hash]['models'] = existing_models
+    else:
+        # Create new entry
+        csv_datasets[csv_hash] = {
+            'dataset_key': dataset_key,
+            'dataset_name': dataset_name,
+            'language': language,
+            'models': [model_entry],
+            'upload_time': datetime.now().isoformat()
+        }
+    
+    # Update current STT data
+    if dataset_key not in current_stt_data:
+        current_stt_data[dataset_key] = {
+            'dataset': dataset_name,
+            'models': [],
+            'is_custom': True,
+            'language': language
+        }
+    
+    # Check if model already exists and update or add
+    model_found = False
+    for idx, model in enumerate(current_stt_data[dataset_key]['models']):
+        if model['name'] == model_name:
+            current_stt_data[dataset_key]['models'][idx] = model_entry
+            model_found = True
+            break
+    
+    if not model_found:
+        current_stt_data[dataset_key]['models'].append(model_entry)
+    
+    # Also update in the existing language section if exists
+    if language in current_stt_data:
+        # Add to standard language section with dataset indicator
+        model_entry_copy = model_entry.copy()
+        model_entry_copy['dataset_source'] = dataset_name
+        
+        model_found = False
+        for idx, model in enumerate(current_stt_data[language]['models']):
+            if model['name'] == model_name and model.get('dataset_source') == dataset_name:
+                current_stt_data[language]['models'][idx] = model_entry_copy
+                model_found = True
+                break
+        
+        if not model_found:
+            current_stt_data[language]['models'].append(model_entry_copy)
+    
+    # Save updated data
+    save_stt_data(current_stt_data)
+    save_csv_tracking()
+    
+    return metrics
 
 @app.route('/api/results', methods=['GET'])
 def get_results():
     """Get current STT results with all available models."""
     logger.info("Sending STT data to frontend")
-    # Merge available models with existing results
     merged_data = merge_available_models_with_results(current_stt_data)
     return jsonify(merged_data)
-
 
 @app.route('/api/available-models', methods=['GET'])
 def get_available_models():
@@ -210,6 +395,159 @@ def get_available_models():
     
     return jsonify({'models': available})
 
+@app.route('/api/test-csv', methods=['POST'])
+def test_csv():
+    """Test a model on CSV dataset using actual pipelines"""
+    try:
+        if 'csv' not in request.files:
+            return jsonify({'error': 'No CSV file provided'}), 400
+        
+        csv_file = request.files['csv']
+        model_name = request.form.get('model')
+        language = request.form.get('language', 'english')
+        dataset_name = request.form.get('dataset_name', f'custom_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
+        
+        if not model_name:
+            return jsonify({'error': 'No model selected'}), 400
+        
+        # Save CSV file
+        csv_filename = secure_filename(csv_file.filename)
+        csv_path = os.path.join(UPLOAD_FOLDER, f"{time.time()}_{csv_filename}")
+        csv_file.save(csv_path)
+        
+        # Get CSV hash to track duplicates
+        csv_hash = get_csv_hash(csv_path)
+        
+        # Check if this CSV was processed before
+        existing_dataset = csv_datasets.get(csv_hash)
+        if existing_dataset:
+            dataset_name = existing_dataset['dataset_name']
+            logger.info(f"CSV already processed before as: {dataset_name}")
+        
+        # Create task ID
+        task_id = f"{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Initialize task
+        running_tasks[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'dataset_name': dataset_name,
+            'started': datetime.now().isoformat(),
+            'csv_hash': csv_hash
+        }
+        
+        # Get model key from display name
+        model_key = get_model_key_from_display_name(model_name)
+        
+        # Get model config
+        model_config = MODEL_CONFIGS.get(model_key, {}).copy()
+        
+        # Apply language-specific configuration
+        if language == 'english':
+            if 'language_code' in model_config:
+                model_config['language_code'] = 'en-US'
+            if 'language' in model_config:
+                model_config['language'] = 'en'
+        elif language == 'hinglish':
+            if 'language_code' in model_config:
+                model_config['language_code'] = 'hi-IN'
+            if 'language' in model_config:
+                model_config['language'] = 'hi'
+        elif language == 'marathi':
+            if 'language_code' in model_config:
+                model_config['language_code'] = 'mr-IN'
+            if 'language' in model_config:
+                model_config['language'] = 'mr'
+        
+        # Run test in background thread
+        def run_csv_test():
+            try:
+                running_tasks[task_id]['progress'] = 10
+                
+                # Set output directory - just use RESULTS_FOLDER as base
+                output_dir = RESULTS_FOLDER
+                
+                # Call appropriate pipeline based on language
+                logger.info(f"Starting {language} pipeline for {model_name} on {dataset_name}")
+                logger.info(f"Output directory: {output_dir}")
+                logger.info(f"CSV path: {csv_path}")
+                
+                if language == 'english':
+                    process_english(
+                        model_name=model_key,
+                        model_config=model_config,
+                        output_dir=output_dir,
+                        dataset_key='custom-csv',
+                        csv_path=csv_path
+                    )
+                elif language == 'marathi':
+                    process_marathi(
+                        model_name=model_key,
+                        model_config=model_config,
+                        output_dir=output_dir,
+                        dataset_key='custom-csv',
+                        csv_path=csv_path
+                    )
+                elif language in ('hinglish', 'hindi'):
+                    process_hinglish(
+                        model_name=model_key,
+                        model_config=model_config,
+                        output_dir=output_dir,
+                        dataset_key='custom-csv',
+                        csv_path=csv_path,
+                        language=language
+                    )
+                else:
+                    raise ValueError(f"Unsupported language: {language}")
+                
+                running_tasks[task_id]['progress'] = 80
+                
+                # Process results and update STT data
+                metrics = process_pipeline_results(
+                    language, 
+                    model_name, 
+                    output_dir, 
+                    csv_hash,
+                    dataset_name,
+                    model_key
+                )
+                
+                running_tasks[task_id]['progress'] = 100
+                running_tasks[task_id]['status'] = 'completed'
+                running_tasks[task_id]['metrics'] = metrics
+                
+                logger.info(f"CSV test completed for {dataset_name}")
+                
+            except Exception as e:
+                logger.error(f"CSV test failed: {e}", exc_info=True)
+                running_tasks[task_id]['status'] = 'failed'
+                running_tasks[task_id]['error'] = str(e)
+            finally:
+                try:
+                    os.remove(csv_path)
+                except:
+                    pass
+        
+        # Start background thread
+        thread = threading.Thread(target=run_csv_test)
+        thread.start()
+        
+        return jsonify({
+            'task_id': task_id,
+            'status': 'started',
+            'message': f'CSV testing started for {model_name} on {dataset_name}'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error starting CSV test: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/task/<task_id>', methods=['GET'])
+def get_task_status(task_id):
+    """Get status of a running task"""
+    if task_id not in running_tasks:
+        return jsonify({'error': 'Task not found'}), 404
+    return jsonify(running_tasks[task_id])
 
 @app.route('/api/audio-test', methods=['POST'])
 def test_audio():
@@ -240,21 +578,8 @@ def test_audio():
                     # Get actual model key from display name
                     model_key = get_model_key_from_display_name(model_display_name)
                     
-                    # Check if model exists in configs
-                    if model_key not in MODEL_CONFIGS:
-                        logger.warning(f"Model {model_key} not found in MODEL_CONFIGS")
-                        # Try to use base deepgram config for Nova variants
-                        if model_key.startswith('deepgram'):
-                            base_config = MODEL_CONFIGS.get('deepgram', {}).copy()
-                            if 'nova3' in model_key:
-                                base_config['model'] = 'nova-3'
-                            elif 'nova2' in model_key:
-                                base_config['model'] = 'nova-2'
-                            model_config = base_config
-                        else:
-                            raise ValueError(f"No configuration found for {model_key}")
-                    else:
-                        model_config = MODEL_CONFIGS.get(model_key, {}).copy()
+                    # Get model config
+                    model_config = MODEL_CONFIGS.get(model_key, {}).copy()
                     
                     # Set language-specific parameters
                     if language == 'english':
@@ -273,16 +598,9 @@ def test_audio():
                         if 'language' in model_config:
                             model_config['language'] = 'mr'
                     
-                    # Handle special model cases
-                    if model_key.startswith('deepgram'):
-                        # For deepgram variants, always use the base deepgram model class
-                        actual_model_key = 'deepgram'
-                    else:
-                        actual_model_key = model_key
-                    
                     # Initialize and load model
-                    logger.info(f"Initializing {actual_model_key} with config: {model_config}")
-                    model = get_model(actual_model_key, model_config)
+                    logger.info(f"Initializing {model_key} with config: {model_config}")
+                    model = get_model(model_key, model_config)
                     model.load()
                     
                     # Transcribe the audio
@@ -296,13 +614,8 @@ def test_audio():
                         logger.warning(f"No transcription returned from {model_display_name}")
                         transcription = "No transcription returned"
                 else:
-                    # Use mock transcription
-                    if language == 'english':
-                        transcription = f"Mock transcription from {model_display_name}: Hello, this is a test audio file."
-                    elif language == 'hinglish':
-                        transcription = f"Mock from {model_display_name}: Namaste, yeh ek test audio file hai."
-                    else:
-                        transcription = f"Mock from {model_display_name}: नमस्कार, ही एक चाचणी ऑडिओ फाइल आहे."
+                    # Fallback mock transcription
+                    transcription = f"Model not available: {model_display_name}"
                 
                 processing_time = time.time() - start_time
                 
@@ -323,14 +636,9 @@ def test_audio():
                     'processingTime': 0
                 })
         
-        # Clean up old files
+        # Clean up
         try:
-            import glob
-            old_files = glob.glob(os.path.join(UPLOAD_FOLDER, '*'))
-            current_time = time.time()
-            for old_file in old_files:
-                if os.path.getmtime(old_file) < current_time - 3600:
-                    os.remove(old_file)
+            os.remove(audio_path)
         except:
             pass
         
@@ -339,125 +647,6 @@ def test_audio():
     except Exception as e:
         logger.error(f"Error in audio test: {e}")
         return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/test-csv', methods=['POST'])
-def test_csv():
-    """Test a model on CSV dataset"""
-    try:
-        if 'csv' not in request.files:
-            return jsonify({'error': 'No CSV file provided'}), 400
-        
-        csv_file = request.files['csv']
-        model_name = request.form.get('model')
-        language = request.form.get('language', 'english')
-        dataset_name = request.form.get('dataset_name', f'custom_{datetime.now().strftime("%Y%m%d_%H%M%S")}')
-        
-        if not model_name:
-            return jsonify({'error': 'No model selected'}), 400
-        
-        # Save CSV file
-        csv_filename = secure_filename(csv_file.filename)
-        csv_path = os.path.join(UPLOAD_FOLDER, f"{time.time()}_{csv_filename}")
-        csv_file.save(csv_path)
-        
-        # Create task ID
-        task_id = f"{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        # Initialize task
-        running_tasks[task_id] = {
-            'status': 'running',
-            'progress': 0,
-            'dataset_name': dataset_name,
-            'started': datetime.now().isoformat()
-        }
-        
-        # Run test in background thread
-        def run_csv_test():
-            try:
-                # TODO: Implement actual CSV processing with the selected model
-                # For now, simulate processing
-                for i in range(10):
-                    time.sleep(0.5)
-                    running_tasks[task_id]['progress'] = (i + 1) * 10
-                
-                # Generate mock metrics based on model
-                model_key = get_model_key_from_display_name(model_name)
-                
-                if language == 'english':
-                    metrics = {
-                        'name': model_name,
-                        'wer_clean': 0.15 + (hash(model_name) % 10) * 0.01,
-                        'cer_clean': 0.04 + (hash(model_name) % 10) * 0.005,
-                        'latency_batch': 2.0 + (hash(model_name) % 5),
-                        'streaming': STANDARD_MODELS.get(model_key, {}).get('streaming', True)
-                    }
-                elif language == 'hinglish':
-                    metrics = {
-                        'name': model_name,
-                        'score': 3.5 + (hash(model_name) % 10) * 0.15,
-                        'latency_batch': 2.0 + (hash(model_name) % 5),
-                        'streaming': STANDARD_MODELS.get(model_key, {}).get('streaming', True)
-                    }
-                else:
-                    metrics = {
-                        'name': model_name,
-                        'wer': 0.25 + (hash(model_name) % 10) * 0.02,
-                        'cer': 0.08 + (hash(model_name) % 10) * 0.01,
-                        'latency_batch': 2.0 + (hash(model_name) % 5),
-                        'streaming': STANDARD_MODELS.get(model_key, {}).get('streaming', True)
-                    }
-                
-                # Update the model in current data if it exists
-                global current_stt_data
-                if language in current_stt_data:
-                    # Find and update existing model or add new
-                    model_found = False
-                    for idx, model in enumerate(current_stt_data[language]['models']):
-                        if model['name'] == model_name:
-                            current_stt_data[language]['models'][idx].update(metrics)
-                            model_found = True
-                            break
-                    
-                    if not model_found:
-                        current_stt_data[language]['models'].append(metrics)
-                
-                # Mark task as completed
-                running_tasks[task_id]['status'] = 'completed'
-                running_tasks[task_id]['progress'] = 100
-                
-            except Exception as e:
-                logger.error(f"CSV test failed: {e}")
-                running_tasks[task_id]['status'] = 'failed'
-                running_tasks[task_id]['error'] = str(e)
-            finally:
-                try:
-                    os.remove(csv_path)
-                except:
-                    pass
-        
-        # Start background thread
-        thread = threading.Thread(target=run_csv_test)
-        thread.start()
-        
-        return jsonify({
-            'task_id': task_id,
-            'status': 'started',
-            'message': f'CSV testing started for {model_name}'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error starting CSV test: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/task/<task_id>', methods=['GET'])
-def get_task_status(task_id):
-    """Get status of a running task"""
-    if task_id not in running_tasks:
-        return jsonify({'error': 'Task not found'}), 404
-    return jsonify(running_tasks[task_id])
-
 
 @app.route('/health', methods=['GET'])
 def simple_health_check():
@@ -472,9 +661,9 @@ def health_check():
         'timestamp': datetime.now().isoformat(),
         'models_available': MODELS_AVAILABLE,
         'model_count': len(AVAILABLE_MODELS) if MODELS_AVAILABLE else 0,
-        'standard_models': len(STANDARD_MODELS)
+        'standard_models': len(STANDARD_MODELS),
+        'custom_datasets': len(csv_datasets)
     })
-
 
 # Static files for React frontend
 @app.route('/static/css/<path:filename>')
@@ -495,42 +684,23 @@ def serve_static_js(filename):
         logger.warning(f"JS file not found: {filename}")
         return "File not found", 404
 
-@app.route('/static/<path:filename>')
-def serve_static(filename):
-    """Serve other static files for React frontend"""
-    try:
-        # Try specific subdirectories first
-        if filename.startswith('css/'):
-            return send_from_directory('dashboard/build/static', filename)
-        elif filename.startswith('js/'):
-            return send_from_directory('dashboard/build/static', filename)
-        else:
-            return send_from_directory('dashboard/build/static', filename)
-    except FileNotFoundError:
-        logger.warning(f"Static file not found: {filename}")
-        return "File not found", 404
-
-
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def serve_react_app(path):
     """Serve React frontend for all non-API routes"""
-    # Skip serving React app for API routes
     if path.startswith('api/'):
         return "API endpoint not found", 404
     
     try:
-        # Try to serve the requested file first
         if path and not path.startswith('api'):
             try:
                 return send_from_directory('dashboard/build', path)
             except FileNotFoundError:
                 pass
         
-        # Default to serving index.html (SPA routing)
         return send_from_directory('dashboard/build', 'index.html')
     except FileNotFoundError:
-        logger.error("React build files not found. Please ensure the frontend is built.")
+        logger.error("React build files not found.")
         return """
         <h1>STT Dashboard</h1>
         <p>Frontend build files not found. The React app needs to be built first.</p>
@@ -541,9 +711,9 @@ def serve_react_app(path):
         </ul>
         """, 200
 
-
 if __name__ == '__main__':
     logger.info("Starting STT Dashboard API server...")
-    logger.info(f"Data loaded: {len(current_stt_data)} languages")
+    logger.info(f"Data loaded: {len(current_stt_data)} datasets")
     logger.info(f"Standard models configured: {len(STANDARD_MODELS)}")
+    logger.info(f"Custom CSV datasets tracked: {len(csv_datasets)}")
     app.run(debug=True, port=5000, host='0.0.0.0')

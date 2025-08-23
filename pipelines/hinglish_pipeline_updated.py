@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional, List
 from tqdm import tqdm
 from openai import OpenAI
 
-from config import S3_CONFIG,OUTPUT_CONFIG
+from config import S3_CONFIG, OUTPUT_CONFIG
 from utils import (
     download_file_from_s3,
     prepare_output_dir
@@ -268,8 +268,12 @@ def process_hinglish_csv(
                 'total_files': len(all_results),
                 'files_evaluated': len(valid_scores),
                 'average_score': avg_score,
-                'score_distribution': score_distribution
+                'avg_llm_score': avg_score,  # Include both keys for compatibility
+                'score_distribution': score_distribution,
+                'num_files': len(valid_scores)
             }, f, indent=2)
+        
+        logging.info(f"Metrics saved to {metrics_path}")
         
         # Log results
         logging.info(f"\n=== {dataset_name} Results ===")
@@ -313,25 +317,6 @@ DATASET_CONFIGS = {
 }
 
 
-
-def parse_s3_uri(s3_uri: str) -> tuple[str, str]:
-    """
-    Parse an S3 URI and return (bucket_name, key). If not an s3 uri, returns (None, path).
-    """
-    if not isinstance(s3_uri, str):
-        return None, s3_uri
-    if not s3_uri.startswith('s3://'):
-        # If it's already just a key path or local path, return None for bucket
-        return None, s3_uri
-    path = s3_uri[5:]
-    parts = path.split('/', 1)
-    if len(parts) == 2:
-        bucket_name, key = parts
-        return bucket_name, key
-    else:
-        return parts[0], ''
-
-
 def _hinglish_iter_hf_samples(dataset_name: str, split: str, tmpdir: str, audio_col: str = 'audio', text_col: str = 'text'):
     from datasets import load_dataset
     import soundfile as sf
@@ -363,6 +348,7 @@ def _hinglish_iter_hf_samples(dataset_name: str, split: str, tmpdir: str, audio_
         file_id = os.path.splitext(os.path.basename(local_path))[0]
         yield file_id, local_path, text
 
+
 def process_hinglish(
     model_name: str,
     model_config: Dict[str, Any],
@@ -379,7 +365,7 @@ def process_hinglish(
       • Any HuggingFace dataset with audio/text columns
     """
     if output_dir is None:
-        output_dir = S3_CONFIG.get('base_dir', '.') if 'S3_CONFIG' in globals() else '.'
+        output_dir = OUTPUT_CONFIG.get('base_dir', '.')
 
     logging.info(f"Initializing {model_name} model...")
     model = get_model(model_name, model_config)
@@ -388,6 +374,7 @@ def process_hinglish(
     # CSV path (default)
     cfg = DATASET_CONFIGS.get(dataset_key, {})
     source = cfg.get('source') or ('csv' if csv_path else 'huggingface')
+    
     if source == 'csv' and (csv_path or dataset_key == 'custom-csv'):
         if not csv_path:
             raise ValueError("csv_path is required for CSV source.")
@@ -397,10 +384,12 @@ def process_hinglish(
     dataset_name = hf_dataset_name or cfg.get('dataset_name')
     if not dataset_name:
         raise ValueError("Please provide hf_dataset_name or use a DATASET_CONFIGS key with dataset_name.")
+    
     dataset_tag = dataset_name.split('/')[-1]
     test_output_dir = prepare_output_dir(output_dir, model_name, f"hf-{dataset_tag}")
     results_csv = os.path.join(test_output_dir, 'results.csv')
     os.makedirs(test_output_dir, exist_ok=True)
+    
     with open(results_csv, 'w', newline='', encoding='utf-8') as out_csv:
         writer = csv.writer(out_csv)
         writer.writerow(['file_id', 'ground_truth', 'hypothesis', 'llm_score'])
@@ -408,6 +397,7 @@ def process_hinglish(
         import tempfile
         total = 0
         scores = []
+        
         with tempfile.TemporaryDirectory() as tmpdir:
             for file_id, local_path, ground_truth in _hinglish_iter_hf_samples(dataset_name, hf_split, tmpdir):
                 try:
@@ -426,12 +416,18 @@ def process_hinglish(
     if valid_scores:
         avg_score = sum(valid_scores) / len(valid_scores)
         score_distribution = {i: valid_scores.count(i) for i in range(1, 6)}
-        with open(os.path.join(test_output_dir, 'metrics.json'), 'w', encoding='utf-8') as f:
+        
+        metrics_path = os.path.join(test_output_dir, 'metrics.json')
+        with open(metrics_path, 'w', encoding='utf-8') as f:
             json.dump({
                 'dataset': dataset_tag,
                 'model': model_name,
                 'avg_llm_score': avg_score,
+                'average_score': avg_score,  # Include both keys for compatibility
                 'score_distribution': score_distribution,
                 'num_files': len(valid_scores)
             }, f, indent=2)
+        
+        logging.info(f"Metrics saved to {metrics_path}")
+        logging.info(f"Average LLM Score: {avg_score:.2f}/5.0")
     return
