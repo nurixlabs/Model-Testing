@@ -259,6 +259,10 @@ const STTDashboard = () => {
             from { transform: translateX(0); opacity: 1; }
             to { transform: translateX(400px); opacity: 0; }
           }
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+          }
         `;
         document.head.appendChild(styleOut);
         
@@ -1401,24 +1405,33 @@ const STTDashboard = () => {
               marginBottom: '1rem'
             }}>
               <div style={{
-                width: `${testingProgress}%`,
+                width: '100%',
                 height: '100%',
                 background: 'linear-gradient(135deg, #10b981 0%, #047857 100%)',
-                transition: 'width 0.5s ease'
+                animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
               }} />
             </div>
             
-            <p style={{ margin: '0 0 1.5rem', color: '#374151', fontWeight: '500' }}>
-              {testingProgress}% Complete
+            <p style={{ 
+              margin: '0 0 1rem', 
+              color: '#374151', 
+              fontWeight: '500',
+              fontSize: '1rem',
+              lineHeight: '1.5'
+            }}>
+              This will take 2-10 minutes to complete based on the audio length.
             </p>
             
-            {testingProgress < 100 && (
-              <div style={{ color: '#6b7280' }}>
-                {testingProgress < 20 && 'Initializing model...'}
-                {testingProgress >= 20 && testingProgress < 80 && 'Processing audio files...'}
-                {testingProgress >= 80 && 'Calculating metrics...'}
-              </div>
-            )}
+            <p style={{ 
+              margin: '0', 
+              color: '#dc2626', 
+              fontWeight: '600',
+              fontSize: '0.9rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              DO NOT REFRESH
+            </p>
           </div>
         </div>
       )}

@@ -53,7 +53,28 @@ class WhisperModel(BaseModel):
             
             self.processor = AutoProcessor.from_pretrained(self.model_id)
             
-            generate_kwargs = {"language": self.language}
+            # Only set language for pure Hindi/Marathi, use auto-detection for English/Hinglish
+            generate_kwargs = {}
+            if self.language and self.language not in ['en', 'english', 'English', 'hinglish', 'Hinglish']:
+                # Map language codes appropriately (only for pure languages)
+                lang_map = {
+                    'hi': 'hindi',
+                    'hi-IN': 'hindi', 
+                    'hindi': 'hindi',
+                    'mr': 'marathi',
+                    'mr-IN': 'marathi',
+                    'marathi': 'marathi'
+                }
+                mapped_lang = lang_map.get(self.language, self.language)
+                generate_kwargs = {"language": mapped_lang}
+                logging.info(f"Whisper using language: {mapped_lang}")
+            else:
+                # Use auto-detection for English and Hinglish
+                if self.language in ['hinglish', 'Hinglish']:
+                    logging.info("Whisper using auto-detection for Hinglish (code-switching)")
+                else:
+                    logging.info("Whisper using auto-detection for English")
+            
             self.pipe = pipeline(
                 "automatic-speech-recognition",
                 model=self.model,
@@ -64,7 +85,7 @@ class WhisperModel(BaseModel):
                 chunk_length_s=30,
                 batch_size=self.batch_size,
                 generate_kwargs=generate_kwargs,
-                return_timestamps="word"
+                return_timestamps=True  # Use True instead of "word"
             )
             
             logging.info("Whisper model loaded successfully")
@@ -100,15 +121,29 @@ class WhisperModel(BaseModel):
             
             # Format word timestamps
             chunks = []
-            if 'chunks' in result:
+            if 'chunks' in result and result['chunks']:
                 for chunk in result['chunks']:
-                    timestamp = chunk.get('timestamp', [0, 0])
+                    # Handle different timestamp formats
+                    timestamp = chunk.get('timestamp', None)
+                    start_time = 0
+                    end_time = 0
+                    
+                    if timestamp is not None:
+                        if isinstance(timestamp, (list, tuple)) and len(timestamp) >= 2:
+                            # Format: [start, end]
+                            start_time = float(timestamp[0]) if timestamp[0] is not None else 0
+                            end_time = float(timestamp[1]) if timestamp[1] is not None else 0
+                        elif isinstance(timestamp, dict):
+                            # Format: {'start': ..., 'end': ...}
+                            start_time = float(timestamp.get('start', 0)) if timestamp.get('start') is not None else 0
+                            end_time = float(timestamp.get('end', 0)) if timestamp.get('end') is not None else 0
+                    
                     chunks.append({
-                        'word': chunk.get('text', ''),
-                        'start_time': timestamp[0] if len(timestamp) > 0 else 0,
-                        'end_time': timestamp[1] if len(timestamp) > 1 else 0,
+                        'word': chunk.get('text', '').strip(),
+                        'start_time': start_time,
+                        'end_time': end_time,
                         'confidence': 0,  # Whisper doesn't provide word-level confidence
-                        'punctuated_word': chunk.get('text', '')
+                        'punctuated_word': chunk.get('text', '').strip()
                     })
             
             return {

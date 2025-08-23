@@ -29,6 +29,7 @@ class GoogleChirp2Model(BaseModel):
         self.language_codes = config.get('language_codes', ['en-IN'])
         self.model = config.get('model', 'chirp_2')
         self.enable_punctuation = config.get('enable_punctuation', True)
+        self.language = config.get('language', 'english')
         
         # Set up Google credentials from environment
         setup_google_environment()
@@ -92,6 +93,128 @@ class GoogleChirp2Model(BaseModel):
             logging.error(f"Error converting audio to WAV: {e}")
             raise
     
+    def _split_and_transcribe(self, wav_path):
+        """
+        Split long audio into chunks and transcribe each chunk.
+        
+        Args:
+            wav_path: Path to WAV audio file
+            
+        Returns:
+            dict: Combined transcription results
+        """
+        try:
+            # Load audio
+            audio = AudioSegment.from_wav(wav_path)
+            duration_ms = len(audio)
+            
+            # Split into 59-second chunks (59000ms)
+            chunk_length_ms = 59000
+            chunks_data = []
+            
+            for i in range(0, duration_ms, chunk_length_ms):
+                # Extract chunk
+                chunk = audio[i:i + chunk_length_ms]
+                
+                # Save chunk to temporary file
+                chunk_fd, chunk_path = tempfile.mkstemp(suffix='.wav')
+                os.close(chunk_fd)
+                
+                try:
+                    chunk.export(chunk_path, format='wav')
+                    
+                    # Transcribe chunk
+                    with open(chunk_path, "rb") as audio_file:
+                        content = audio_file.read()
+                    
+                    # Set up recognition config
+                    # For Hinglish, use both en-IN and hi-IN
+                    if self.language == 'hinglish':
+                        config = speech_v2.RecognitionConfig(
+                            auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),
+                            language_codes=['en-IN', 'hi-IN'],  # Support both languages for code-switching
+                            model=self.model,
+                            features=speech_v2.RecognitionFeatures(
+                                enable_automatic_punctuation=self.enable_punctuation,
+                            ),
+                        )
+                    else:
+                        config = speech_v2.RecognitionConfig(
+                            auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),
+                            language_codes=self.language_codes,
+                            model=self.model,
+                            features=speech_v2.RecognitionFeatures(
+                                enable_automatic_punctuation=self.enable_punctuation,
+                            ),
+                        )
+                    
+                    # Create request
+                    request = speech_v2.RecognizeRequest(
+                        config=config,
+                        content=content,
+                        recognizer=self.recognizer,
+                    )
+                    
+                    # Get transcription
+                    response = self.client.recognize(request=request)
+                    
+                    # Store chunk data with time offset
+                    chunks_data.append({
+                        'response': response,
+                        'offset_seconds': i / 1000.0
+                    })
+                    
+                finally:
+                    # Clean up chunk file
+                    if os.path.exists(chunk_path):
+                        os.remove(chunk_path)
+            
+            # Combine all chunk results
+            full_transcript = ""
+            all_chunks = []
+            total_confidence = 0
+            confidence_count = 0
+            
+            for chunk_data in chunks_data:
+                response = chunk_data['response']
+                offset = chunk_data['offset_seconds']
+                
+                for result in response.results:
+                    if result.alternatives:
+                        alt = result.alternatives[0]
+                        full_transcript += alt.transcript + " "
+                        
+                        # Extract word-level information with adjusted timing
+                        if hasattr(alt, 'words') and alt.words:
+                            for word in alt.words:
+                                all_chunks.append({
+                                    'word': getattr(word, 'word', ''),
+                                    'start_time': (word.start_offset.total_seconds() if hasattr(word, 'start_offset') else 0) + offset,
+                                    'end_time': (word.end_offset.total_seconds() if hasattr(word, 'end_offset') else 0) + offset,
+                                    'confidence': getattr(word, 'confidence', 0),
+                                    'punctuated_word': getattr(word, 'word', '')
+                                })
+                        
+                        # Accumulate confidence
+                        if hasattr(alt, 'confidence'):
+                            total_confidence += alt.confidence
+                            confidence_count += 1
+            
+            full_transcript = full_transcript.strip()
+            avg_confidence = total_confidence / confidence_count if confidence_count > 0 else 0
+            
+            logging.info(f"Successfully transcribed {len(chunks_data)} chunks")
+            
+            return {
+                'text': full_transcript,
+                'chunks': all_chunks,
+                'confidence': avg_confidence
+            }
+            
+        except Exception as e:
+            logging.error(f"Error in split_and_transcribe: {e}")
+            raise
+    
     def transcribe(self, audio_path):
         """
         Transcribe audio using Google Chirp 2.
@@ -107,15 +230,38 @@ class GoogleChirp2Model(BaseModel):
             # Convert to WAV if needed
             wav_path = self._convert_to_wav(audio_path)
             
+            # Check audio duration
+            audio = AudioSegment.from_wav(wav_path)
+            duration_seconds = len(audio) / 1000.0
+            
+            logging.info(f"Audio duration: {duration_seconds:.1f} seconds")
+            
+            # If audio is longer than 60 seconds, split and transcribe
+            if duration_seconds > 60:
+                logging.info(f"Audio exceeds 60 seconds, splitting into chunks...")
+                return self._split_and_transcribe(wav_path)
+            
+            # For audio <= 60 seconds, use original single-pass method
             # Set up recognition config
-            config = speech_v2.RecognitionConfig(
-                auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),
-                language_codes=self.language_codes,
-                model=self.model,
-                features=speech_v2.RecognitionFeatures(
-                    enable_automatic_punctuation=self.enable_punctuation,
-                ),
-            )
+            # For Hinglish, use both en-IN and hi-IN
+            if self.language == 'hinglish':
+                config = speech_v2.RecognitionConfig(
+                    auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),
+                    language_codes=['en-IN', 'hi-IN'],  # Support both languages for code-switching
+                    model=self.model,
+                    features=speech_v2.RecognitionFeatures(
+                        enable_automatic_punctuation=self.enable_punctuation,
+                    ),
+                )
+            else:
+                config = speech_v2.RecognitionConfig(
+                    auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),
+                    language_codes=self.language_codes,
+                    model=self.model,
+                    features=speech_v2.RecognitionFeatures(
+                        enable_automatic_punctuation=self.enable_punctuation,
+                    ),
+                )
             
             # Read audio file
             with open(wav_path, "rb") as audio_file:

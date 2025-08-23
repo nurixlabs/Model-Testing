@@ -5,6 +5,8 @@ import os
 import time
 import json
 import logging
+import tempfile
+import subprocess
 import azure.cognitiveservices.speech as speechsdk
 from models.base_model import BaseModel
 
@@ -67,20 +69,81 @@ class AzureModel(BaseModel):
             logging.warning(f"Invalid language code '{mapped}' for Azure, defaulting to 'en-IN'")
             return 'en-IN'
         return mapped
+    
+    def _convert_to_azure_format(self, audio_path):
+        """
+        Convert audio to Azure-compatible WAV format (16kHz, 16-bit, mono PCM).
+        Returns path to converted file or original if conversion fails.
+        """
+        try:
+            # Create a temporary file for the converted audio
+            temp_fd, temp_path = tempfile.mkstemp(suffix='.wav')
+            os.close(temp_fd)
+            
+            # Use ffmpeg to convert to Azure-compatible format
+            # -ac 1: mono
+            # -ar 16000: 16kHz sample rate
+            # -sample_fmt s16: 16-bit signed PCM
+            # -map_metadata -1: strip metadata chunks that might cause issues
+            cmd = [
+                'ffmpeg', '-y', '-i', audio_path,
+                '-ac', '1',
+                '-ar', '16000',
+                '-sample_fmt', 's16',
+                '-map_metadata', '-1',
+                temp_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                logging.info(f"Converted audio to Azure-compatible format: {temp_path}")
+                return temp_path
+            else:
+                logging.warning(f"ffmpeg conversion failed: {result.stderr}")
+                os.remove(temp_path)
+                return audio_path
+                
+        except FileNotFoundError:
+            logging.warning("ffmpeg not found, using original audio file")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return audio_path
+        except Exception as e:
+            logging.warning(f"Audio conversion failed: {e}, using original file")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return audio_path
 
     def transcribe(self, audio_path, language=None):
         """
         Transcribe audio using Azure Speech Services (file input).
         Returns: dict with 'text', 'chunks' (word timings), 'language_used' or 'error'
         """
+        converted_audio = None
         try:
-            if language:
-                language_code = self._get_language_code(language)
-                self.speech_config.speech_recognition_language = language_code
-                logging.info(f"Using language override: {language_code}")
-
-            audio_config = speechsdk.audio.AudioConfig(filename=audio_path)
-            recognizer = speechsdk.SpeechRecognizer(speech_config=self.speech_config, audio_config=audio_config)
+            # Convert audio to Azure-compatible format
+            converted_audio = self._convert_to_azure_format(audio_path)
+            audio_config = speechsdk.audio.AudioConfig(filename=converted_audio)
+            
+            # For Hinglish, use AutoDetectSourceLanguageConfig for segment-level detection
+            if language == 'hinglish' or (not language and self.language == 'hinglish'):
+                logging.info("Using AutoDetectSourceLanguageConfig for Hinglish with en-IN and hi-IN")
+                auto_detect_config = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
+                    languages=["en-IN", "hi-IN"]
+                )
+                recognizer = speechsdk.SpeechRecognizer(
+                    speech_config=self.speech_config, 
+                    audio_config=audio_config,
+                    auto_detect_source_language_config=auto_detect_config
+                )
+            else:
+                # For other languages, use standard configuration
+                if language:
+                    language_code = self._get_language_code(language)
+                    self.speech_config.speech_recognition_language = language_code
+                    logging.info(f"Using language override: {language_code}")
+                recognizer = speechsdk.SpeechRecognizer(speech_config=self.speech_config, audio_config=audio_config)
 
             final_text = []
             chunks = []
@@ -131,15 +194,28 @@ class AzureModel(BaseModel):
 
             recognizer.stop_continuous_recognition()
 
+            # Determine language used
+            lang_used = self.speech_config.speech_recognition_language
+            if language == 'hinglish' or (not language and self.language == 'hinglish'):
+                lang_used = "hi-IN/en-IN (auto-detect)"
+            
             return {
                 "text": " ".join(t.strip() for t in final_text).strip(),
                 "chunks": chunks,
-                "language_used": self.speech_config.speech_recognition_language,
+                "language_used": lang_used,
             }
 
         except Exception as e:
             logging.error(f"Error transcribing with Azure: {e}")
             return {"text": "", "error": str(e)}
+        finally:
+            # Clean up temporary converted audio file
+            if converted_audio and converted_audio != audio_path and os.path.exists(converted_audio):
+                try:
+                    os.remove(converted_audio)
+                    logging.info(f"Cleaned up temporary audio file: {converted_audio}")
+                except Exception as e:
+                    logging.warning(f"Failed to clean up temporary file: {e}")
         
 # if __name__ == "__main__":
 #     import argparse

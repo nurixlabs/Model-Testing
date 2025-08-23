@@ -23,6 +23,7 @@ class AWSModel(BaseModel):
         self.transcribe_client = None
         self.s3_client = None
         self.language_code = config.get('language_code', 'en-US')
+        self.language = config.get('language', 'english')
         self.max_concurrent_jobs = config.get('max_concurrent_jobs', 90)
         self.output_bucket_name = config.get('output_bucket_name')
         self.output_prefix = config.get('output_prefix', 'transcripts')
@@ -78,14 +79,27 @@ class AWSModel(BaseModel):
             output_key = f"{self.output_prefix}/{job_name}/transcript.json"
             
             # Submit transcription job
-            response = self.transcribe_client.start_transcription_job(
-                TranscriptionJobName=job_name,
-                Media={'MediaFileUri': f"s3://{bucket_name}/{audio_key}"},
-                MediaFormat=media_format,
-                LanguageCode=self.language_code,
-                OutputBucketName=bucket_name,
-                OutputKey=output_key
-            )
+            # For Hinglish, use language identification
+            if self.language == 'hinglish':
+                response = self.transcribe_client.start_transcription_job(
+                    TranscriptionJobName=job_name,
+                    Media={'MediaFileUri': f"s3://{bucket_name}/{audio_key}"},
+                    MediaFormat=media_format,
+                    IdentifyLanguage=True,
+                    LanguageOptions=['en-IN', 'hi-IN'],  # Support both languages for code-switching
+                    OutputBucketName=bucket_name,
+                    OutputKey=output_key
+                )
+                logging.info(f"Submitted Hinglish transcription job with language identification: en-IN, hi-IN")
+            else:
+                response = self.transcribe_client.start_transcription_job(
+                    TranscriptionJobName=job_name,
+                    Media={'MediaFileUri': f"s3://{bucket_name}/{audio_key}"},
+                    MediaFormat=media_format,
+                    LanguageCode=self.language_code,
+                    OutputBucketName=bucket_name,
+                    OutputKey=output_key
+                )
             
             logging.info(f"Submitted transcription job {job_name}, waiting for completion")
             

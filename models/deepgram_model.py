@@ -76,21 +76,32 @@ class DeepgramModel(BaseModel):
             
             payload = {"buffer": buffer_data}
             
-            # Get the appropriate language code
-            lang_code = self._get_language_code(language)
-            
-            options = {
-                'punctuate': self.punctuate,
-                'language': lang_code,
-                'model': self.model,
-                'smart_format': self.smart_format,
-            }
+            # For Hinglish, use multi-language model
+            if language == 'hinglish' or (not language and self.language == 'hinglish'):
+                # Use multi-language model for code-switching
+                lang_code = 'multi'  # Set lang_code for Hinglish
+                options = {
+                    'punctuate': self.punctuate,
+                    'language': lang_code,  # Use multi-language for Hinglish
+                    'model': self.model,  # Keep the actual model (nova-2 or nova-3)
+                    'smart_format': self.smart_format,
+                }
+                logging.info(f"Transcribing with Deepgram {self.model} in multi-language mode for Hinglish...")
+            else:
+                # Get the appropriate language code for single language
+                lang_code = self._get_language_code(language)
+                
+                options = {
+                    'punctuate': self.punctuate,
+                    'language': lang_code,
+                    'model': self.model,
+                    'smart_format': self.smart_format,
+                }
+                logging.info(f"Transcribing with Deepgram {self.model} in language {lang_code}...")
             
             # Only add endpoint if specified
             if self.location:
                 options['endpoint'] = self.location
-            
-            logging.info(f"Transcribing with Deepgram {self.model} in language {lang_code}...")
             
             response = self.client.listen.rest.v("1").transcribe_file(payload, options)
             

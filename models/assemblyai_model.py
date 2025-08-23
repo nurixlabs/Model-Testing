@@ -44,13 +44,16 @@ class AssemblyAIModel(BaseModel):
             dict: Transcription results
         """
         try:
+            # For Hinglish, use Hindi as AssemblyAI doesn't support code-switching
+            lang_code = 'hi' if self.language == 'hinglish' else self.language
+            
             # Configure transcription options
             config = aai.TranscriptionConfig(
                 punctuate=self.punctuate,
                 format_text=self.format_text,
                 speaker_labels=self.speaker_labels,
                 auto_highlights=self.auto_highlights,
-                language_code=self.language if self.language != 'en' else None
+                language_code=lang_code if lang_code != 'en' else None
             )
             
             # Submit transcription and wait for completion

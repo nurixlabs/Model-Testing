@@ -459,16 +459,23 @@ def test_csv():
         if language == 'english':
             if 'language_code' in model_config:
                 model_config['language_code'] = 'en-US'
+            if 'language_codes' in model_config:  # For Google v2
+                model_config['language_codes'] = ['en-IN']
             if 'language' in model_config:
                 model_config['language'] = 'en'
         elif language == 'hinglish':
+            # Pass hinglish as language so models can handle code-switching
+            if 'language' in model_config:
+                model_config['language'] = 'hinglish'
+            # For models that don't support code-switching, use Hindi
             if 'language_code' in model_config:
                 model_config['language_code'] = 'hi-IN'
-            if 'language' in model_config:
-                model_config['language'] = 'hi'
+            # Note: language_codes for Hinglish is handled in google_model_v2.py
         elif language == 'marathi':
             if 'language_code' in model_config:
                 model_config['language_code'] = 'mr-IN'
+            if 'language_codes' in model_config:  # For Google v2
+                model_config['language_codes'] = ['mr-IN']
             if 'language' in model_config:
                 model_config['language'] = 'mr'
         
@@ -600,21 +607,26 @@ def test_audio():
                     if language == 'english':
                         if 'language_code' in model_config:
                             model_config['language_code'] = 'en-US'
+                        if 'language_codes' in model_config:  # For Google v2
+                            model_config['language_codes'] = ['en-IN']
                         if 'language' in model_config:
                             model_config['language'] = 'en'
                     elif language == 'hinglish':
                         if 'language_code' in model_config:
                             model_config['language_code'] = 'hi-IN'
+                        # Note: language_codes for Hinglish is handled in google_model_v2.py
                         if 'language' in model_config:
-                            model_config['language'] = 'hi'
+                            model_config['language'] = 'hinglish'
                     elif language == 'marathi':
                         if 'language_code' in model_config:
                             model_config['language_code'] = 'mr-IN'
+                        if 'language_codes' in model_config:  # For Google v2
+                            model_config['language_codes'] = ['mr-IN']
                         if 'language' in model_config:
                             model_config['language'] = 'mr'
                     
                     # Initialize and load model
-                    logger.info(f"Initializing {model_key} with config: {model_config}")
+                    logger.info(f"Initializing {model_key}")
                     model = get_model(model_key, model_config)
                     model.load()
                     

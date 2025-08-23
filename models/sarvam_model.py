@@ -5,8 +5,12 @@ import os
 import time
 import random
 import logging
+import json
+import tempfile
+from pathlib import Path
 from models.base_model import BaseModel
 from sarvamai import SarvamAI
+from pydub import AudioSegment
 
 
 class SarvamModel(BaseModel):
@@ -102,9 +106,9 @@ class SarvamModel(BaseModel):
         
         self.last_request_time = time.time()
     
-    def transcribe(self, audio_path):
+    def _transcribe_batch(self, audio_path):
         """
-        Transcribe audio using Sarvam AI with rate limiting and retries.
+        Transcribe audio using Sarvam AI batch API for files > 30 seconds.
         
         Args:
             audio_path: Path to audio file
@@ -112,6 +116,173 @@ class SarvamModel(BaseModel):
         Returns:
             dict: Transcription results
         """
+        try:
+            logging.info("Using Sarvam batch API for long audio file")
+            
+            # Create temporary output directory
+            with tempfile.TemporaryDirectory() as output_dir:
+                output_path = Path(output_dir)
+                
+                # Create transcription job
+                job = self.client.speech_to_text_job.create_job(
+                    model=self.model,
+                    with_diarization=False,
+                    with_timestamps=True,
+                    language_code=self.language_code,
+                    num_speakers=2,  # Default value
+                )
+                
+                logging.info(f"Sarvam batch job created: {job._job_id}")
+                
+                # Upload audio file
+                job.upload_files(file_paths=[audio_path], timeout=120.0)
+                
+                # Start transcription
+                job.start()
+                logging.info("Sarvam batch transcription started...")
+                
+                # Wait for completion with timeout
+                job.wait_until_complete(poll_interval=5, timeout=300)  # 5 minute timeout
+                
+                if job.is_failed():
+                    error_msg = "Sarvam batch transcription failed"
+                    logging.error(error_msg)
+                    return {
+                        'text': '',
+                        'error': error_msg
+                    }
+                
+                # Download results
+                job.download_outputs(output_dir=str(output_path))
+                logging.info(f"Sarvam batch transcription completed. Output saved to: {output_path}")
+                
+                # Find and parse the output file
+                output_files = list(output_path.glob("*.json"))
+                if not output_files:
+                    # Try looking for text files
+                    output_files = list(output_path.glob("*.txt"))
+                    if output_files:
+                        # Read text file
+                        with open(output_files[0], 'r', encoding='utf-8') as f:
+                            transcript = f.read()
+                        return {
+                            'text': transcript,
+                            'chunks': [],
+                            'confidence': 0
+                        }
+                    return {
+                        'text': '',
+                        'error': 'No output file found from batch job'
+                    }
+                
+                # Parse JSON output
+                with open(output_files[0], 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                logging.info(f"Sarvam output file type: {type(content)}, length: {len(content)}")
+                
+                # Content is always a string when read from file
+                try:
+                    # Try to parse as JSON
+                    result = json.loads(content)
+                    logging.info(f"Successfully parsed JSON. Result type: {type(result)}")
+                except json.JSONDecodeError as e:
+                    logging.warning(f"Could not parse as JSON: {e}. Treating as plain text.")
+                    # If not JSON, treat as plain text transcript
+                    return {
+                        'text': content.strip(),
+                        'chunks': [],
+                        'confidence': 0
+                    }
+                
+                # Handle if result is a string (direct transcript)
+                if isinstance(result, str):
+                    return {
+                        'text': result.strip(),
+                        'chunks': [],
+                        'confidence': 0
+                    }
+                
+                # Extract transcript and timestamps from dictionary
+                transcript = result.get('transcript', result.get('text', ''))
+                chunks = []
+                
+                # Process timestamps if available
+                if 'timestamps' in result and isinstance(result['timestamps'], dict):
+                    # New Sarvam batch format with separate arrays
+                    timestamps = result['timestamps']
+                    words = timestamps.get('words', [])
+                    start_times = timestamps.get('start_time_seconds', [])
+                    end_times = timestamps.get('end_time_seconds', [])
+                    
+                    # Combine the arrays into word chunks
+                    for i, word_text in enumerate(words):
+                        chunks.append({
+                            'word': word_text,
+                            'start_time': start_times[i] if i < len(start_times) else 0,
+                            'end_time': end_times[i] if i < len(end_times) else 0,
+                            'confidence': 0,  # Sarvam doesn't provide confidence
+                            'punctuated_word': word_text
+                        })
+                elif 'timestamps' in result and isinstance(result['timestamps'], list):
+                    # Old format with array of timestamp objects
+                    for timestamp in result['timestamps']:
+                        chunks.append({
+                            'word': timestamp.get('word', ''),
+                            'start_time': timestamp.get('start_time', 0),
+                            'end_time': timestamp.get('end_time', 0),
+                            'confidence': timestamp.get('confidence', 0),
+                            'punctuated_word': timestamp.get('word', '')
+                        })
+                elif 'words' in result:
+                    # Alternative format with words array
+                    for word in result['words']:
+                        chunks.append({
+                            'word': word.get('word', word.get('text', '')),
+                            'start_time': word.get('start_time', word.get('start', 0)),
+                            'end_time': word.get('end_time', word.get('end', 0)),
+                            'confidence': word.get('confidence', 0),
+                            'punctuated_word': word.get('word', word.get('text', ''))
+                        })
+                
+                return {
+                    'text': transcript,
+                    'chunks': chunks,
+                    'confidence': result.get('confidence', 0)
+                }
+                
+        except Exception as e:
+            logging.error(f"Error in Sarvam batch transcription: {e}")
+            return {
+                'text': '',
+                'error': str(e)
+            }
+    
+    def transcribe(self, audio_path):
+        """
+        Transcribe audio using Sarvam AI with rate limiting and retries.
+        Automatically uses batch API for audio > 30 seconds.
+        
+        Args:
+            audio_path: Path to audio file
+            
+        Returns:
+            dict: Transcription results
+        """
+        # Check audio duration
+        try:
+            audio = AudioSegment.from_file(audio_path)
+            duration_seconds = len(audio) / 1000.0
+            logging.info(f"Sarvam: Audio duration is {duration_seconds:.1f} seconds")
+            
+            # Use batch API for audio longer than 30 seconds
+            if duration_seconds > 30:
+                logging.info("Audio exceeds 30 seconds, using Sarvam batch API")
+                return self._transcribe_batch(audio_path)
+        except Exception as e:
+            logging.warning(f"Could not determine audio duration, proceeding with regular API: {e}")
+        
+        # Use regular API for short audio or if duration check fails
         retry_count = 0
         
         while retry_count <= self.max_retries:
