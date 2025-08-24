@@ -45,7 +45,7 @@ RUN mkdir -p temp_uploads logs transcription_results
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
-
+ENV AWS_PROFILE='Power-root'
 # Expose port
 EXPOSE 5000
 
