@@ -4,8 +4,14 @@ NVIDIA Parakeet-TDT NeMo Model Implementation
 import os
 import logging
 import torch
-import nemo.collections.asr as nemo_asr
 from models.base_model import BaseModel
+
+try:
+    import nemo.collections.asr as nemo_asr
+    NEMO_AVAILABLE = True
+except ImportError:
+    NEMO_AVAILABLE = False
+    nemo_asr = None
 
 
 class NvidiaParakeetModel(BaseModel):
@@ -20,6 +26,9 @@ class NvidiaParakeetModel(BaseModel):
     
     def load(self):
         """Load the NeMo ASR model."""
+        if not NEMO_AVAILABLE:
+            raise ImportError("NeMo toolkit is not available")
+            
         logging.info(f"Loading NeMo Parakeet model: {self.model_id}")
         logging.info(f"Device: {self.device}")
         

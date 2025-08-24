@@ -5,9 +5,15 @@ Conformer Marathi Model Implementation
 import os
 import logging
 import torch
-import nemo.collections.asr as nemo_asr
 from models.base_model import BaseModel
 import re
+
+try:
+    import nemo.collections.asr as nemo_asr
+    NEMO_AVAILABLE = True
+except ImportError:
+    NEMO_AVAILABLE = False
+    nemo_asr = None
 
 
 class ConformerMarathiModel(BaseModel):
@@ -28,6 +34,9 @@ class ConformerMarathiModel(BaseModel):
 
     def load(self):
         """Load the NeMo ASR model."""
+        if not NEMO_AVAILABLE:
+            raise ImportError("NeMo toolkit is not available")
+            
         try:
             # Method 1: Try loading from local .nemo file
             if self.model_id.endswith(".nemo"):

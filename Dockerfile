@@ -12,12 +12,17 @@ RUN npm run build
 # Python backend stage
 FROM python:3.11-slim
 
-# Install system dependencies
+# Install system dependencies including build tools
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     ffmpeg \
     libsndfile1 \
+    gdal-bin \
+    libgdal-dev \
+    build-essential \
+    g++ \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # Set work directory

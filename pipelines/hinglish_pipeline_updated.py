@@ -10,7 +10,13 @@ import json
 import logging
 from typing import Dict, Any, Optional, List
 from tqdm import tqdm
-from openai import OpenAI
+
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    OpenAI = None
 
 from config import S3_CONFIG, OUTPUT_CONFIG
 from utils import (
@@ -20,8 +26,25 @@ from utils import (
 from models.model_factory import get_model
 
 
-# Initialize OpenAI client (loaded from environment)
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+# Initialize OpenAI client lazily
+client = None
+
+def get_openai_client():
+    """Get OpenAI client, initialize if needed and if API key is available"""
+    global client
+    if client is None and OPENAI_AVAILABLE:
+        api_key = os.getenv('OPENAI_API_KEY')
+        if api_key:
+            try:
+                client = OpenAI(api_key=api_key)
+                logging.info("OpenAI client initialized successfully")
+            except Exception as e:
+                logging.warning(f"Failed to initialize OpenAI client: {e}")
+                client = False  # Mark as failed to avoid retries
+        else:
+            logging.warning("OPENAI_API_KEY not found in environment")
+            client = False
+    return client if client and client != False else None
 
 
 def parse_s3_uri(s3_uri: str) -> tuple[str, str]:
@@ -67,6 +90,11 @@ def llm_judge_score(
     Returns:
         int: Score from 1-5, or None if evaluation fails
     """
+    client = get_openai_client()
+    if not client:
+        logging.warning("OpenAI client not available, skipping LLM scoring")
+        return None
+        
     prompt = (
         "TASK: Compare the ground truth transcript with the STT hypothesis and rate semantic similarity.\n"
         "The hypothesis may be in Roman script, Devanagari script, or a mixture of both.\n\n"

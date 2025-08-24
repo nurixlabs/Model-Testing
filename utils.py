@@ -11,8 +11,20 @@ import soundfile as sf
 from jiwer import wer, cer
 
 
-# Initialize S3 client
-s3_client = boto3.client('s3')
+# Initialize S3 client lazily
+s3_client = None
+
+def get_s3_client():
+    """Get S3 client, initialize if needed and if credentials are available"""
+    global s3_client
+    if s3_client is None:
+        try:
+            s3_client = boto3.client('s3')
+            logging.info("S3 client initialized successfully")
+        except Exception as e:
+            logging.warning(f"Failed to initialize S3 client: {e}")
+            s3_client = False  # Mark as failed to avoid retries
+    return s3_client if s3_client else None
 
 
 def list_files_in_s3(bucket_name: str, prefix: str, extensions: Tuple[str, ...]) -> List[str]:
@@ -27,8 +39,13 @@ def list_files_in_s3(bucket_name: str, prefix: str, extensions: Tuple[str, ...])
     Returns:
         List of S3 keys matching the extensions
     """
+    client = get_s3_client()
+    if not client:
+        logging.error("S3 client not available")
+        return []
+    
     files = []
-    paginator = s3_client.get_paginator('list_objects_v2')
+    paginator = client.get_paginator('list_objects_v2')
     
     try:
         for page in paginator.paginate(Bucket=bucket_name, Prefix=prefix):
@@ -55,12 +72,16 @@ def download_file_from_s3(bucket_name: str, key: str, local_dir: str) -> str:
     Returns:
         Path to the downloaded file
     """
+    client = get_s3_client()
+    if not client:
+        raise RuntimeError("S3 client not available")
+        
     filename = os.path.basename(key)
     local_path = os.path.join(local_dir, filename)
     
     try:
         logging.debug(f"Downloading s3://{bucket_name}/{key} to {local_path}")
-        s3_client.download_file(bucket_name, key, local_path)
+        client.download_file(bucket_name, key, local_path)
         return local_path
     except Exception as e:
         logging.error(f"Error downloading {key}: {e}")
