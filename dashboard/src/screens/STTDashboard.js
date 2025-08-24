@@ -1243,7 +1243,7 @@ const STTDashboard = () => {
           padding: '2rem',
           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
         }}>
-          <h1 style={{ margin: '0 0 0.5rem', color: '#1f2937', fontSize: '2.25rem' }}>🎙️ STT Model Comparison</h1>
+          <h1 style={{ margin: '0 0 0.5rem', color: '#1f2937', fontSize: '2.25rem' }}>🎙️Model Comparison</h1>
           <p style={{ margin: 0, color: '#6b7280', fontSize: '1.1rem' }}>
             Compare performance metrics between different Speech-to-Text models across languages
           </p>
