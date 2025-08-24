@@ -28,17 +28,25 @@ class SecretsManager:
         
     @property
     def client(self):
-        """Lazy initialization of boto3 client"""
         if self._client is None:
             try:
-                self._client = boto3.client('secretsmanager', region_name=self.region_name)
-                logger.info(f"Initialized AWS Secrets Manager client for region: {self.region_name}")
+                akid = os.environ.get('AKID')
+                skey = os.environ.get('SKEY')
+                print("akid>>>>>>>>>>>",akid)
+
+                if akid and skey:
+                    self._client = boto3.client(
+                        "secretsmanager",
+                        region_name=self.region_name,
+                        aws_access_key_id=akid,
+                        aws_secret_access_key=skey,
+                        # aws_session_token=stok,
+                    )
+                else:
+                    # fallback to normal boto3 chain (useful if you later move to IRSA)
+                    self._client = boto3.client("secretsmanager", region_name=self.region_name)
             except NoCredentialsError:
-                logger.error("AWS credentials not found. Make sure IRSA is properly configured.")
-                raise
-            except Exception as e:
-                logger.error(f"Failed to initialize Secrets Manager client: {e}")
-                raise
+                raise RuntimeError("❌ AWS static credentials not found in environment")
         return self._client
     
     def get_secrets(self, force_refresh: bool = False) -> Dict[str, Any]:
@@ -174,6 +182,7 @@ def get_secret(key: str, default: Optional[str] = None) -> Optional[str]:
     # First try environment variable
     env_value = os.environ.get(key)
     if env_value:
+        print("PRINTING ENV VALUE", env_value)
         return env_value
     
     # Then try Secrets Manager
