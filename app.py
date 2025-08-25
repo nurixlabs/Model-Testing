@@ -437,6 +437,7 @@ def test_csv():
         if existing_dataset:
             dataset_name = existing_dataset['dataset_name']
             logger.info(f"CSV already processed before for {language} as: {dataset_name}")
+            # Don't skip processing - we still need to run the test for this specific model
         
         # Create task ID
         task_id = f"{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"

@@ -19,8 +19,23 @@ def get_s3_client():
     global s3_client
     if s3_client is None:
         try:
-            s3_client = boto3.client('s3')
-            logging.info("S3 client initialized successfully")
+            # Use same authentication approach as secrets_manager.py
+            akid = os.environ.get('AKID')
+            skey = os.environ.get('SKEY')
+            
+            if akid and skey:
+                # Use explicit credentials from environment
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=akid,
+                    aws_secret_access_key=skey,
+                    region_name='ap-south-1'
+                )
+                logging.info("S3 client initialized with explicit credentials")
+            else:
+                # Fallback to default boto3 credential chain
+                s3_client = boto3.client('s3', region_name='ap-south-1')
+                logging.info("S3 client initialized with default credentials")
         except Exception as e:
             logging.warning(f"Failed to initialize S3 client: {e}")
             s3_client = False  # Mark as failed to avoid retries
