@@ -372,11 +372,12 @@ def get_results():
 @app.route('/api/available-models', methods=['GET'])
 def get_available_models():
     """Get list of available models for testing."""
-    # Fixed list of models available for all languages
-    fixed_models = [
+    language = request.args.get('language', 'english')
+    
+    # Base models without whisper
+    base_models = [
         {'key': 'deepgram_nova3', 'display_name': 'Deepgram Nova 3', 'streaming': True},
         {'key': 'deepgram_nova2', 'display_name': 'Deepgram Nova 2', 'streaming': True},
-        {'key': 'whisper', 'display_name': 'Whisper', 'streaming': False},
         {'key': 'google_v2', 'display_name': 'Google STT v2', 'streaming': True},
         {'key': 'aws', 'display_name': 'AWS STT', 'streaming': True},
         {'key': 'azure', 'display_name': 'AZURE STT', 'streaming': True},
@@ -384,6 +385,12 @@ def get_available_models():
         {'key': 'assemblyai', 'display_name': 'AssemblyAI', 'streaming': True},
         {'key': 'sarvam', 'display_name': 'Sarvam', 'streaming': True}
     ]
+    
+    # Remove deepgram nova2 and nova3 for Marathi
+    if language == 'marathi':
+        fixed_models = [m for m in base_models if m['key'] not in ['deepgram_nova2', 'deepgram_nova3']]
+    else:
+        fixed_models = base_models
     
     return jsonify({'models': fixed_models})
 

@@ -18,7 +18,7 @@ def get_google_credentials() -> Optional[Credentials]:
     
     Tries the following in order:
     1. GOOGLE_APPLICATION_CREDENTIALS_JSON - JSON string containing service account
-    2. GOOGLE_APPLICATION_CREDENTIALS - Path to service account file
+    2. GOOGLE_APPLICATION_CREDENTIALS - Path to service account file or JSON string
     
     Returns:
         Google credentials object or None if not found
@@ -50,18 +50,45 @@ def get_google_credentials() -> Optional[Credentials]:
         except Exception as e:
             logger.error(f"Error creating credentials from JSON: {e}")
     
-    # Try file path
-    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-    if creds_path and os.path.exists(creds_path):
-        try:
-            credentials = service_account.Credentials.from_service_account_file(
-                creds_path,
-                scopes=["https://www.googleapis.com/auth/cloud-platform"]
-            )
-            logger.info(f"Google credentials loaded from file: {creds_path}")
-            return credentials
-        except Exception as e:
-            logger.error(f"Error loading credentials from file: {e}")
+    # Try GOOGLE_APPLICATION_CREDENTIALS - could be either file path or JSON string
+    creds_env = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+    if creds_env:
+        # First check if it's a file path
+        if os.path.exists(creds_env):
+            try:
+                credentials = service_account.Credentials.from_service_account_file(
+                    creds_env,
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                )
+                logger.info(f"Google credentials loaded from file: {creds_env}")
+                return credentials
+            except Exception as e:
+                logger.error(f"Error loading credentials from file: {e}")
+        else:
+            # Try parsing as JSON string (common when loaded from AWS Secrets Manager)
+            try:
+                # Remove surrounding quotes if present
+                if creds_env.startswith("'") and creds_env.endswith("'"):
+                    creds_env = creds_env[1:-1]
+                elif creds_env.startswith('"') and creds_env.endswith('"'):
+                    creds_env = creds_env[1:-1]
+                
+                # Parse JSON
+                creds_data = json.loads(creds_env)
+                
+                # Create credentials from the JSON data
+                credentials = service_account.Credentials.from_service_account_info(
+                    creds_data,
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                )
+                
+                logger.info("Google credentials loaded from GOOGLE_APPLICATION_CREDENTIALS (JSON string)")
+                return credentials
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"GOOGLE_APPLICATION_CREDENTIALS is neither a valid file path nor valid JSON: {e}")
+            except Exception as e:
+                logger.error(f"Error creating credentials from GOOGLE_APPLICATION_CREDENTIALS: {e}")
     
     logger.warning("No Google credentials found in environment")
     return None
@@ -90,14 +117,30 @@ def get_credentials_info() -> Optional[Dict[str, Any]]:
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON: {e}")
     
-    # Try file path
-    creds_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
-    if creds_path and os.path.exists(creds_path):
-        try:
-            with open(creds_path, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading credentials from file: {e}")
+    # Try GOOGLE_APPLICATION_CREDENTIALS - could be either file path or JSON string
+    creds_env = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+    if creds_env:
+        # First check if it's a file path
+        if os.path.exists(creds_env):
+            try:
+                with open(creds_env, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading credentials from file: {e}")
+        else:
+            # Try parsing as JSON string
+            try:
+                # Remove surrounding quotes if present
+                if creds_env.startswith("'") and creds_env.endswith("'"):
+                    creds_env = creds_env[1:-1]
+                elif creds_env.startswith('"') and creds_env.endswith('"'):
+                    creds_env = creds_env[1:-1]
+                
+                # Parse and return JSON
+                return json.loads(creds_env)
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"GOOGLE_APPLICATION_CREDENTIALS is neither a valid file path nor valid JSON: {e}")
     
     return None
 
@@ -134,11 +177,35 @@ def setup_google_environment():
     Set up Google Cloud environment from embedded credentials.
     
     This creates a temporary file and sets GOOGLE_APPLICATION_CREDENTIALS
-    if only GOOGLE_APPLICATION_CREDENTIALS_JSON is present.
+    if it contains JSON string instead of a file path.
     """
-    # Only proceed if JSON is present but file path is not
-    if (os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON') and 
-        not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')):
+    creds_env = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
+    
+    # Check if GOOGLE_APPLICATION_CREDENTIALS contains JSON string instead of file path
+    if creds_env and not os.path.exists(creds_env):
+        # Try to parse as JSON to verify it's valid
+        try:
+            # Remove surrounding quotes if present
+            test_json = creds_env
+            if test_json.startswith("'") and test_json.endswith("'"):
+                test_json = test_json[1:-1]
+            elif test_json.startswith('"') and test_json.endswith('"'):
+                test_json = test_json[1:-1]
+            
+            json.loads(test_json)
+            
+            # It's valid JSON, create a temp file
+            temp_path = create_temp_credentials_file()
+            if temp_path:
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_path
+                logger.info(f"Created temporary credentials file from JSON string: {temp_path}")
+        except json.JSONDecodeError:
+            # Not JSON, might be an invalid file path
+            logger.warning(f"GOOGLE_APPLICATION_CREDENTIALS is neither a valid file nor JSON: {creds_env[:100]}...")
+    
+    # Also handle the original case where GOOGLE_APPLICATION_CREDENTIALS_JSON is set
+    elif (os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON') and 
+          not os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')):
         
         temp_path = create_temp_credentials_file()
         if temp_path:

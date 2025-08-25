@@ -32,7 +32,6 @@ class SecretsManager:
             try:
                 akid = os.environ.get('AKID')
                 skey = os.environ.get('SKEY')
-                print("akid>>>>>>>>>>>",akid)
 
                 if akid and skey:
                     self._client = boto3.client(

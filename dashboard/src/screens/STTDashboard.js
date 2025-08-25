@@ -62,22 +62,22 @@ const STTDashboard = () => {
   }, [selectedLanguage]);
 
   // Load available models for testing
-  const loadAvailableModels = () => {
-    fetch('/api/available-models')
+  const loadAvailableModels = React.useCallback(() => {
+    fetch(`/api/available-models?language=${selectedLanguage}`)
       .then(res => res.json())
       .then(data => {
         setAvailableTestModels(data.models || []);
       })
       .catch(err => {
         console.error('Error loading available models:', err);
-        // Fallback to hardcoded list if API fails
-        setAvailableTestModels([
-          'Deepgram Nova 3', 'Deepgram Nova 2', 'Whisper', 
-          'Google STT v2', 'AWS STT', 'AZURE STT', 
-          'Gladia', 'AssemblyAI', 'Sarvam'
-        ]);
+        // Fallback to hardcoded list if API fails (without Whisper)
+        const fallbackModels = selectedLanguage === 'marathi'
+          ? ['Google STT v2', 'AWS STT', 'AZURE STT', 'Gladia', 'AssemblyAI', 'Sarvam']
+          : ['Deepgram Nova 3', 'Deepgram Nova 2', 'Google STT v2', 'AWS STT', 'AZURE STT', 
+             'Gladia', 'AssemblyAI', 'Sarvam'];
+        setAvailableTestModels(fallbackModels);
       });
-  };
+  }, [selectedLanguage]);
 
   useEffect(() => {
     loadData();
@@ -506,8 +506,10 @@ const STTDashboard = () => {
           <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
             {(availableTestModels.length > 0 ? 
               availableTestModels.map(m => typeof m === 'string' ? m : m.display_name) : 
-              ['Deepgram Nova 3', 'Deepgram Nova 2', 'Whisper', 'Google STT v2', 
-               'AWS STT', 'AZURE STT', 'Gladia', 'AssemblyAI', 'Sarvam']
+              selectedLanguage === 'marathi' 
+                ? ['Google STT v2', 'AWS STT', 'AZURE STT', 'Gladia', 'AssemblyAI', 'Sarvam']
+                : ['Deepgram Nova 3', 'Deepgram Nova 2', 'Google STT v2', 
+                   'AWS STT', 'AZURE STT', 'Gladia', 'AssemblyAI', 'Sarvam']
             ).map(model => (
               <label key={model} style={{
                 display: 'flex',
@@ -750,8 +752,10 @@ const STTDashboard = () => {
           <option value="">Choose a model to test...</option>
           {(availableTestModels.length > 0 ? 
             availableTestModels.map(m => typeof m === 'string' ? m : m.display_name) : 
-            ['Deepgram Nova 3', 'Deepgram Nova 2', 'Whisper', 'Google STT v2', 
-             'AWS STT', 'AZURE STT', 'Gladia', 'AssemblyAI', 'Sarvam']
+            selectedLanguage === 'marathi' 
+              ? ['Google STT v2', 'AWS STT', 'AZURE STT', 'Gladia', 'AssemblyAI', 'Sarvam']
+              : ['Deepgram Nova 3', 'Deepgram Nova 2', 'Google STT v2', 
+                 'AWS STT', 'AZURE STT', 'Gladia', 'AssemblyAI', 'Sarvam']
           ).map(model => (
             <option key={model} value={model}>{model}</option>
           ))}
