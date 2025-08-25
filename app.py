@@ -665,17 +665,20 @@ def test_audio():
                     'processingTime': 0
                 })
         
-        # Clean up
-        try:
-            os.remove(audio_path)
-        except:
-            pass
-        
         return jsonify({'results': results})
         
     except Exception as e:
         logger.error(f"Error in audio test: {e}")
         return jsonify({'error': str(e)}), 500
+    
+    finally:
+        # Always clean up the uploaded file
+        if 'audio_path' in locals() and os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+                logger.info(f"Cleaned up temporary file: {audio_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to clean up temporary file {audio_path}: {cleanup_error}")
 
 @app.route('/health', methods=['GET'])
 def simple_health_check():

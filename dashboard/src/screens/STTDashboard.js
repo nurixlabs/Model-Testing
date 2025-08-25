@@ -428,6 +428,16 @@ const STTDashboard = () => {
       
       setTimeout(() => {
         setShowTestingModal(false);
+        
+        // Clear the uploaded file and model selection after successful test
+        setUploadedAudioFile(null);
+        setSelectedTestModels([]);
+        
+        // Reset the file input element
+        const fileInput = document.getElementById('audio-upload');
+        if (fileInput) {
+          fileInput.value = '';
+        }
       }, 500);
     } catch (error) {
       console.error('Error:', error);
@@ -1263,6 +1273,10 @@ const STTDashboard = () => {
             onChange={(e) => {
               setSelectedLanguage(e.target.value);
               setSelectedDataset('default');
+              // Reset audio testing state when language changes
+              setUploadedAudioFile(null);
+              setSelectedTestModels([]);
+              setAudioTestResults(null);
             }}
             style={{
               padding: '0.75rem',
