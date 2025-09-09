@@ -424,25 +424,94 @@ const STTDashboard = () => {
       
       const result = await response.json();
       setTestingProgress(100);
-      setAudioTestResults(result.results);
       
-      setTimeout(() => {
+      // Always show results, even if some models failed
+      if (result.results && result.results.length > 0) {
+        setAudioTestResults(result.results);
+        
+        // Check if any models failed
+        const failedModels = result.results.filter(r => r.error);
+        const successfulModels = result.results.filter(r => !r.error);
+        
+        setTimeout(() => {
+          setShowTestingModal(false);
+          
+          // Show notification about results
+          if (failedModels.length > 0 && successfulModels.length > 0) {
+            // Some models failed, some succeeded
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+              position: fixed;
+              top: 20px;
+              right: 20px;
+              background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+              color: white;
+              padding: 1rem 1.5rem;
+              border-radius: 12px;
+              box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+              z-index: 10000;
+              animation: slideIn 0.3s ease-out;
+              max-width: 400px;
+            `;
+            notification.innerHTML = `
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span style="font-size: 1.5rem;">⚠️</span>
+                <div>
+                  <div style="font-weight: 600; margin-bottom: 0.25rem;">Partial Success</div>
+                  <div style="opacity: 0.9; font-size: 0.9rem;">
+                    ${successfulModels.length} model(s) succeeded, ${failedModels.length} failed
+                  </div>
+                  <div style="opacity: 0.8; font-size: 0.85rem; margin-top: 0.25rem;">
+                    Check results below for details
+                  </div>
+                </div>
+              </div>
+            `;
+            document.body.appendChild(notification);
+            
+            // Add animation
+            const style = document.createElement('style');
+            style.textContent = `
+              @keyframes slideIn {
+                from { transform: translateX(400px); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+              }
+              @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(400px); opacity: 0; }
+              }
+            `;
+            document.head.appendChild(style);
+            
+            // Remove notification after 5 seconds
+            setTimeout(() => {
+              notification.style.animation = 'slideOut 0.3s ease-in forwards';
+              setTimeout(() => {
+                document.body.removeChild(notification);
+                document.head.removeChild(style);
+              }, 300);
+            }, 5000);
+          }
+          
+          // Clear the uploaded file and model selection after test
+          setUploadedAudioFile(null);
+          setSelectedTestModels([]);
+          
+          // Reset the file input element
+          const fileInput = document.getElementById('audio-upload');
+          if (fileInput) {
+            fileInput.value = '';
+          }
+        }, 500);
+      } else {
+        // No results returned at all
         setShowTestingModal(false);
-        
-        // Clear the uploaded file and model selection after successful test
-        setUploadedAudioFile(null);
-        setSelectedTestModels([]);
-        
-        // Reset the file input element
-        const fileInput = document.getElementById('audio-upload');
-        if (fileInput) {
-          fileInput.value = '';
-        }
-      }, 500);
+        alert('No results returned from the server');
+      }
     } catch (error) {
       console.error('Error:', error);
-      alert('Error during audio testing');
       setShowTestingModal(false);
+      alert('Error communicating with server: ' + error.message);
     }
   };
 
@@ -572,10 +641,59 @@ const STTDashboard = () => {
           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
         }}>
           <h3 style={{ margin: '0 0 1rem', color: '#1f2937' }}>📊 Transcription Results</h3>
+          
+          {/* Summary Stats */}
+          {(() => {
+            const successCount = audioTestResults.filter(r => !r.error).length;
+            const failCount = audioTestResults.filter(r => r.error).length;
+            return (
+              <div style={{ 
+                display: 'flex', 
+                gap: '1rem', 
+                marginBottom: '1.5rem',
+                flexWrap: 'wrap'
+              }}>
+                <div style={{
+                  padding: '0.75rem 1.25rem',
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  color: 'white',
+                  borderRadius: '8px',
+                  fontSize: '0.9rem',
+                  fontWeight: '500'
+                }}>
+                  ✅ Successful: {successCount}
+                </div>
+                {failCount > 0 && (
+                  <div style={{
+                    padding: '0.75rem 1.25rem',
+                    background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                    color: 'white',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    fontWeight: '500'
+                  }}>
+                    ❌ Failed: {failCount}
+                  </div>
+                )}
+                <div style={{
+                  padding: '0.75rem 1.25rem',
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                  color: 'white',
+                  borderRadius: '8px',
+                  fontSize: '0.9rem',
+                  fontWeight: '500'
+                }}>
+                  📊 Total Models: {audioTestResults.length}
+                </div>
+              </div>
+            );
+          })()}
+          
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
+                  <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Status</th>
                   <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Model</th>
                   <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Transcription</th>
                   <th style={{ padding: '0.75rem', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Processing Time</th>
@@ -583,23 +701,109 @@ const STTDashboard = () => {
               </thead>
               <tbody>
                 {audioTestResults.map((result, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                  <tr key={idx} style={{ 
+                    borderBottom: '1px solid #f3f4f6',
+                    background: result.error ? '#fef2f2' : 'white'
+                  }}>
+                    <td style={{ padding: '0.75rem' }}>
+                      {result.error ? (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '6px',
+                          fontSize: '0.875rem',
+                          fontWeight: '500',
+                          background: '#fee2e2',
+                          color: '#991b1b'
+                        }}>
+                          ❌ Failed
+                        </span>
+                      ) : (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem',
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '6px',
+                          fontSize: '0.875rem',
+                          fontWeight: '500',
+                          background: '#dcfce7',
+                          color: '#166534'
+                        }}>
+                          ✅ Success
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '0.75rem', fontWeight: '500' }}>{result.model}</td>
                     <td style={{ padding: '0.75rem' }}>
                       {result.error ? (
-                        <span style={{ color: '#dc2626' }}>Error: {result.error}</span>
+                        <div>
+                          <div style={{ 
+                            color: '#dc2626', 
+                            fontWeight: '500',
+                            marginBottom: '0.25rem'
+                          }}>
+                            ⚠️ Error occurred
+                          </div>
+                          <div style={{ 
+                            color: '#7f1d1d',
+                            fontSize: '0.875rem',
+                            fontStyle: 'italic',
+                            background: '#fef2f2',
+                            padding: '0.5rem',
+                            borderRadius: '4px',
+                            border: '1px solid #fecaca'
+                          }}>
+                            {result.error}
+                          </div>
+                        </div>
                       ) : (
-                        result.transcription
+                        <div style={{
+                          background: '#f0fdf4',
+                          padding: '0.5rem',
+                          borderRadius: '4px',
+                          border: '1px solid #bbf7d0'
+                        }}>
+                          {result.transcription || 'No transcription returned'}
+                        </div>
                       )}
                     </td>
                     <td style={{ padding: '0.75rem' }}>
-                      {result.processingTime ? `${result.processingTime.toFixed(2)}s` : 'N/A'}
+                      {result.error ? (
+                        <span style={{ color: '#6b7280' }}>-</span>
+                      ) : (
+                        <span style={{
+                          fontWeight: '500',
+                          color: result.processingTime < 2 ? '#059669' : 
+                                 result.processingTime < 5 ? '#d97706' : '#dc2626'
+                        }}>
+                          {result.processingTime ? `${result.processingTime.toFixed(2)}s` : 'N/A'}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          
+          {/* Show note if there were failures */}
+          {audioTestResults.some(r => r.error) && (
+            <div style={{
+              marginTop: '1rem',
+              padding: '0.75rem',
+              background: '#fef3c7',
+              borderRadius: '8px',
+              border: '1px solid #fde68a'
+            }}>
+              <span style={{ color: '#92400e', fontSize: '0.9rem' }}>
+                💡 <strong>Note:</strong> Failed models may have configuration issues or temporary service problems. 
+                Successful results are shown above for the models that worked.
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
